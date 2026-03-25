@@ -6,62 +6,111 @@
   <title>LDOS Boot Console</title>
   <style>
     :root {
-      --fg: #c8c8c8;
-      --fg-bright: #ffffff;
-      --bg: #000000;
+      --dos-blue: #0000aa;
+      --dos-light: #aaaaaa;
+      --dos-bright: #ffffff;
+      --dos-accent: #55ffff;
+      --dos-green: #55ff55;
+      --dos-yellow: #ffff55;
+      --dos-danger: #ff5555;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background: var(--bg);
-      color: var(--fg);
+      background: var(--dos-blue);
+      color: var(--dos-light);
       font-family: "Courier New", Courier, monospace;
     }
 
     body {
       display: grid;
       place-items: center;
-      padding: 0.75rem;
+      padding: 1rem;
     }
 
     .screen {
-      width: min(980px, 100%);
-      height: min(96vh, 700px);
+      width: min(960px, 100%);
+      height: min(96vh, 680px);
+      border: 2px solid var(--dos-light);
+      box-shadow:
+        0 0 0 2px #000,
+        0 0 0 4px var(--dos-light);
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
-      background: var(--bg);
+      grid-template-rows: auto 1fr auto;
+      background: var(--dos-blue);
     }
 
     .titlebar {
-      color: var(--fg-bright);
-      padding: 0.25rem 0;
+      background: var(--dos-light);
+      color: #000;
+      padding: 0.25rem 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       font-weight: 700;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      text-align: center;
     }
 
-    .power-wrap {
-      display: grid;
-      place-items: center;
-      padding: 0.25rem 0 0.75rem;
+    .titlebar small {
+      font-weight: 400;
+    }
+
+    .terminal {
+      white-space: pre-wrap;
+      overflow: hidden;
+      padding: 0.75rem;
+      line-height: 1.25;
+      font-size: clamp(12px, 2vw, 18px);
+    }
+
+    .line {
+      min-height: 1.25em;
+    }
+
+    .scan {
+      color: var(--dos-yellow);
+    }
+
+    .selected {
+      color: var(--dos-green);
+      font-weight: 700;
+    }
+
+    .footer {
+      border-top: 1px solid var(--dos-light);
+      padding: 0.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .status {
+      color: var(--dos-accent);
+      font-size: 0.95em;
     }
 
     .power-btn {
       width: 62px;
       height: 62px;
       border-radius: 50%;
-      border: 2px solid var(--fg);
-      background: #0a0a0a;
-      color: var(--fg-bright);
+      border: 2px solid var(--dos-light);
+      background: #000088;
+      color: var(--dos-bright);
+      display: inline-grid;
+      place-items: center;
       cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
       position: relative;
-      transition: transform 120ms ease;
+      font-size: 1.6rem;
+      font-weight: 700;
     }
 
     .power-btn::before {
@@ -71,8 +120,8 @@
       border: 3px solid currentColor;
       border-radius: 50%;
       position: absolute;
-      top: 17px;
-      left: 16px;
+      top: 19px;
+      left: 18px;
     }
 
     .power-btn::after {
@@ -81,66 +130,58 @@
       height: 16px;
       background: currentColor;
       position: absolute;
-      top: 7px;
-      left: 28px;
+      top: 9px;
+      left: 29px;
       border-radius: 2px;
     }
 
-    .power-btn:hover { transform: scale(1.04); }
-
     .power-btn:focus-visible {
-      outline: 1px dashed var(--fg-bright);
+      outline: 2px dashed var(--dos-bright);
       outline-offset: 4px;
     }
 
+    .power-btn:hover {
+      background: #0000cc;
+      transform: scale(1.04);
+    }
+
     .power-btn.on {
-      color: var(--fg-bright);
-      border-color: var(--fg-bright);
+      background: #003300;
+      color: var(--dos-green);
+      border-color: var(--dos-green);
+      box-shadow: 0 0 10px rgba(85, 255, 85, 0.6);
       cursor: not-allowed;
-    }
-
-    .terminal {
-      white-space: pre-wrap;
-      overflow: hidden;
-      padding: 0.35rem 0;
-      line-height: 1.24;
-      font-size: clamp(12px, 1.8vw, 18px);
-    }
-
-    .line { min-height: 1.2em; }
-
-    .status {
-      padding-top: 0.4rem;
-      text-align: center;
-      font-size: 0.95em;
     }
 
     .cursor {
       display: inline-block;
       width: 0.6ch;
-      height: 1.05em;
-      background: var(--fg);
+      background: var(--dos-light);
       margin-left: 1px;
       animation: blink 1s steps(1, end) infinite;
       vertical-align: baseline;
     }
 
     @keyframes blink {
-      50% { opacity: 0; }
+      50% {
+        opacity: 0;
+      }
     }
   </style>
 </head>
 <body>
   <main class="screen" role="application" aria-label="LDOS boot screen">
-    <header class="titlebar">LDOS SYSTEM CONSOLE</header>
-
-    <div class="power-wrap">
-      <button id="powerButton" class="power-btn" title="Power" aria-label="Power on"></button>
-    </div>
+    <header class="titlebar">
+      <span>LDOS SYSTEM CONSOLE</span>
+      <small>MS-DOS style emulation</small>
+    </header>
 
     <section id="terminal" class="terminal" aria-live="polite"></section>
 
-    <footer id="status" class="status">SYSTEM OFFLINE - PRESS POWER</footer>
+    <footer class="footer">
+      <span id="status" class="status">SYSTEM OFFLINE — PRESS POWER</span>
+      <button id="powerButton" class="power-btn" title="Power" aria-label="Power on"></button>
+    </footer>
   </main>
 
   <script>
@@ -156,34 +197,28 @@
       { id: "EC-2", name: "ETHICS COMMITTEE OFFICE DATABASE ACCESS POINT", status: "MONITORING", location: "[MP WING]" }
     ];
 
-    const preBootLines = [
-      "Starting MS-DOS...",
-      "HIMEM is testing extended memory...done.",
-      "XMS manager installed. 655360K available.",
-      "Drive C: FAT16, Serial 0E4F-19EB",
-      "Reading CONFIG.SYS",
-      "Loading DEVICE=OAKCDROM.SYS /D:MSCD001",
-      "Loading AUTOEXEC.BAT",
-      "SET PATH=C:\\DOS;C:\\LDOS",
-      "C:\\DOS>VER",
-      "MS-DOS Version 6.22"
-    ];
-
-    const ldosLines = [
-      "LDOS V5.0 - BUILT FOR ARMED RESEARCH SITE 40",
+    const scriptLines = [
+      "LDOS V5.0 BIOS CHECK...",
+      "COPYRIGHT (C) ARMED RESEARCH SITE 40",
       "AMBROSE SOFTWARE DEVELOPMENT GROUP",
-      "INITIALIZING SECURITY BUS",
-      "SYNCING RTC",
+      "",
       "LOADING BOOT PROGRAM",
       "COMPILING F-LDOS INTRANET",
       "COMPILING BITNET COMMS V2.4A",
+      "",
       "SCANNING AVAILABLE NODES",
+      "",
       "LOADING GRAPHICAL INTERFACE",
       "INTERFACE READY",
       "REDIRECTING TO MAIN CONSOLE"
     ];
 
-    const timing = { char: 18, line: 190, scanTick: 150, holdBeforeRedirect: 1600 };
+    const timing = {
+      char: 20,
+      line: 240,
+      scanTick: 150,
+      holdBeforeRedirect: 1700
+    };
 
     const terminal = document.getElementById("terminal");
     const statusEl = document.getElementById("status");
@@ -191,30 +226,13 @@
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const rnd = (n) => Math.floor(Math.random() * n);
-
     function pickNode() {
-      return nodes[rnd(nodes.length)];
+      return nodes[Math.floor(Math.random() * nodes.length)];
     }
 
-    function fakeIPv4() {
-      return `${10 + rnd(200)}.${rnd(256)}.${rnd(256)}.${2 + rnd(220)}`;
-    }
-
-    function fakeProxy() {
-      return `proxy-${100 + rnd(900)}.seg-${rnd(16).toString(16).toUpperCase()}.int`;
-    }
-
-    function fakeHex(size = 8) {
-      const chars = "ABCDEF0123456789";
-      let out = "";
-      for (let i = 0; i < size; i++) out += chars[rnd(chars.length)];
-      return out;
-    }
-
-    function addLine(text = "") {
+    function addLine(text = "", cssClass = "") {
       const el = document.createElement("div");
-      el.className = "line";
+      el.className = `line ${cssClass}`.trim();
       el.textContent = text;
       terminal.appendChild(el);
       return el;
@@ -228,87 +246,75 @@
       }
     }
 
-    async function typeLine(text, prefix = "> ") {
+    async function typeLine(text) {
       const el = addLine();
-      await typeInto(el, `${prefix}${text}`);
+      await typeInto(el, `> ${text}`);
       await sleep(timing.line);
       return el;
     }
 
     async function progressLine(label) {
       const el = addLine();
-      const width = 20;
-      for (let i = 0; i <= width; i++) {
-        const pct = Math.round((i / width) * 100).toString().padStart(3, " ");
-        el.textContent = `> ${label.padEnd(30, " ")} [${"#".repeat(i)}${" ".repeat(width - i)}] ${pct}%`;
-        await sleep(35 + rnd(60));
+      await typeInto(el, `> ${label} [`);
+      const blocks = 20;
+      for (let i = 1; i <= blocks; i++) {
+        el.textContent += "█";
+        const pct = Math.round((i / blocks) * 100).toString().padStart(3, " ");
+        const base = `> ${label} [`;
+        el.textContent = `${base}${"█".repeat(i)}${" ".repeat(blocks - i)}] ${pct}%`;
+        await sleep(40 + Math.random() * 40);
       }
       await sleep(timing.line);
     }
 
     async function runNodeScan() {
-      const line = addLine();
-      let selected = pickNode();
-
-      for (let i = 0; i < 10; i++) {
-        const candidate = pickNode();
-        const ip = fakeIPv4();
-        const proxy = fakeProxy();
-        const route = fakeHex(6);
-        line.textContent = `> SCAN ${String(i + 1).padStart(2, "0")}/10  NODE=${candidate.id}  IP=${ip}  PROXY=${proxy}  ROUTE=${route}`;
-        selected = candidate;
+      const line = addLine("> SCANNING:", "scan");
+      let shown = null;
+      for (let i = 0; i < 8; i++) {
+        shown = pickNode();
+        line.textContent = `> SCANNING: ${shown.id} - ${shown.name}`;
         await sleep(timing.scanTick);
       }
-
-      line.textContent = `> LINK LOCKED  NODE=${selected.id}  IP=${fakeIPv4()}  PROXY=${fakeProxy()}  TLS=ON  RTT=${15 + rnd(40)}ms`;
-      await sleep(timing.line);
-      return selected;
+      line.classList.remove("scan");
+      line.classList.add("selected");
+      return shown;
     }
 
     async function showNode(node) {
       const details = [
-        `  NODE ID   : ${node.id}`,
-        `  HOSTNAME  : ${node.name}`,
-        `  STATUS    : ${node.status}`,
-        `  LOCATION  : ${node.location}`,
-        `  IPV4      : ${fakeIPv4()}`,
-        `  PROXY     : ${fakeProxy()}`,
-        `  SESSION   : ${fakeHex(12)}`
+        `  NODE: ${node.id}`,
+        `  NAME: ${node.name}`,
+        `  STATUS: ${node.status}`,
+        `  LOCATION: ${node.location}`
       ];
-
       for (const detail of details) {
         const row = addLine();
-        await typeInto(row, detail, Math.max(8, timing.char - 8));
-        await sleep(80);
+        await typeInto(row, detail, Math.max(10, timing.char - 8));
+        await sleep(120);
       }
     }
 
     function redirectToConsole() {
-      const popup = window.open(TARGET_URL, "_blank", "noopener,noreferrer");
-      if (!popup) window.location.href = TARGET_URL;
+      const w = window.open(TARGET_URL, "_blank", "noopener,noreferrer");
+      if (!w) {
+        window.location.href = TARGET_URL;
+      }
     }
 
     async function boot() {
       powerButton.disabled = true;
       powerButton.classList.add("on");
-      terminal.innerHTML = "";
       statusEl.textContent = "BOOT SEQUENCE RUNNING...";
+      terminal.innerHTML = "";
 
-      for (const line of preBootLines) {
-        await typeLine(line, "");
-      }
-
+      await typeLine(scriptLines[0]);
+      await typeLine(scriptLines[1]);
+      await typeLine(scriptLines[2]);
       addLine("");
 
-      await typeLine(ldosLines[0]);
-      await typeLine(ldosLines[1]);
-      await typeLine(ldosLines[2]);
-      await typeLine(ldosLines[3]);
-
-      addLine("");
-      await progressLine(ldosLines[4]);
-      await progressLine(ldosLines[5]);
-      await progressLine(ldosLines[6]);
+      await progressLine(scriptLines[4]);
+      await progressLine(scriptLines[5]);
+      await progressLine(scriptLines[6]);
       addLine("");
 
       const node = await runNodeScan();
@@ -316,16 +322,16 @@
       await showNode(node);
       addLine("");
 
-      await typeLine(ldosLines[8]);
-      await typeLine(ldosLines[9]);
-      await typeLine(ldosLines[10]);
+      await typeLine(scriptLines[10]);
+      await typeLine(scriptLines[11]);
+      await typeLine(scriptLines[12]);
 
-      const prompt = addLine("C:\\LDOS>");
+      const cursorRow = addLine("A:\\>");
       const cursor = document.createElement("span");
       cursor.className = "cursor";
-      prompt.appendChild(cursor);
+      cursorRow.appendChild(cursor);
 
-      statusEl.textContent = "SYSTEM ONLINE - LAUNCHING CONSOLE...";
+      statusEl.textContent = "SYSTEM ONLINE — LAUNCHING CONSOLE...";
       await sleep(timing.holdBeforeRedirect);
       redirectToConsole();
     }
