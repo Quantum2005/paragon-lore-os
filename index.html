@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LDOS Boot Console</title>
+  <style>
+    :root {
+      --fg: #c8c8c8;
+      --fg-bright: #ffffff;
+      --bg: #000000;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 0.6rem;
+    }
+
+    .screen {
+      width: min(1180px, 100%);
+      height: min(98vh, 860px);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto auto;
+      background: var(--bg);
+    }
+
+    .titlebar {
+      color: var(--fg-bright);
+      padding: 0.2rem 0;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .power-wrap {
+      display: grid;
+      place-items: center;
+      padding: 0.2rem 0 0.6rem;
+    }
+
+    .power-btn {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      border: 2px solid var(--fg);
+      background: #0a0a0a;
+      color: var(--fg-bright);
+      cursor: pointer;
+      position: relative;
+      transition: transform 120ms ease;
+    }
+
+    .power-btn::before {
+      content: "";
+      width: 26px;
+      height: 26px;
+      border: 3px solid currentColor;
+      border-radius: 50%;
+      position: absolute;
+      top: 17px;
+      left: 16px;
+    }
+
+    .power-btn::after {
+      content: "";
+      width: 4px;
+      height: 16px;
+      background: currentColor;
+      position: absolute;
+      top: 7px;
+      left: 28px;
+      border-radius: 2px;
+    }
+
+    .power-btn:hover { transform: scale(1.04); }
+
+    .power-btn:focus-visible,
+    .launch-btn:focus-visible {
+      outline: 1px dashed var(--fg-bright);
+      outline-offset: 4px;
+    }
+
+    .power-btn.on {
+      color: var(--fg-bright);
+      border-color: var(--fg-bright);
+      cursor: not-allowed;
+    }
+
+    .terminal {
+      white-space: pre-wrap;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0.35rem 0;
+      line-height: 1.24;
+      font-size: clamp(12px, 1.55vw, 18px);
+      scrollbar-width: thin;
+      scrollbar-color: #555 #111;
+    }
+
+    .line { min-height: 1.2em; }
+
+    .status {
+      padding-top: 0.45rem;
+      text-align: center;
+      font-size: 0.95em;
+    }
+
+    .launch-wrap {
+      display: grid;
+      place-items: center;
+      padding-top: 0.5rem;
+    }
+
+    .launch-btn {
+      background: #0a0a0a;
+      color: var(--fg-bright);
+      border: 1px solid var(--fg);
+      padding: 0.45rem 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .launch-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 0.6ch;
+      height: 1.05em;
+      background: var(--fg);
+      margin-left: 1px;
+      animation: blink 1s steps(1, end) infinite;
+      vertical-align: baseline;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="screen" role="application" aria-label="LDOS boot screen">
+    <header class="titlebar">LDOS SYSTEM CONSOLE</header>
+
+    <div class="power-wrap">
+      <button id="powerButton" class="power-btn" title="Power" aria-label="Power on"></button>
+    </div>
+
+    <section id="terminal" class="terminal" aria-live="polite"></section>
+
+    <footer id="status" class="status">SYSTEM OFFLINE - PRESS POWER</footer>
+
+    <div class="launch-wrap">
+      <button id="launchButton" class="launch-btn" disabled>OPEN MAIN CONSOLE</button>
+    </div>
+  </main>
+
+  <script>
+    const TARGET_URL = "https://sites.google.com/view/ldoperating-system/console";
+
+    // Edit these arrays to add/remove boot lines.
+    const preBootLines = [
+      "Starting MS-DOS...",
+      "HIMEM is testing extended memory...done.",
+      "XMS manager installed. 655360K available.",
+      "Drive C: FAT16, Serial 0E4F-19EB",
+      "Reading CONFIG.SYS",
+      "Loading DEVICE=OAKCDROM.SYS /D:MSCD001",
+      "Loading AUTOEXEC.BAT",
+      "SET PATH=C:\\DOS;C:\\LDOS",
+      "C:\\DOS>VER",
+      "MS-DOS Version 6.22",
+      "Checking SMARTDRV cache...ready.",
+      "Detecting PS/2 keyboard...ok."
+    ];
+
+    const ldosLines = [
+      "LDOS V5.0 - BUILT FOR ARMED RESEARCH SITE 40",
+      "AMBROSE SOFTWARE DEVELOPMENT GROUP",
+      "INITIALIZING SECURITY BUS",
+      "SYNCING RTC",
+      "LOADING BOOT PROGRAM",
+      "COMPILING F-LDOS INTRANET",
+      "COMPILING BITNET COMMS V2.4A",
+      "SCANNING AVAILABLE NODES",
+      "LOADING GRAPHICAL INTERFACE",
+      "INTERFACE READY",
+      "SYSTEM READY - AWAITING OPERATOR ACTION"
+    ];
+
+    // Timing controls: increase values to slow down, decrease to speed up.
+    const timing = {
+      char: 18,
+      line: 180,
+      scanTick: 145,
+      detailDelay: 75,
+      progressMin: 35,
+      progressRand: 55
+    };
+
+    const nodes = [
+      { id: "ASU-5", name: "APPALACHIA STATE UNIV. NODE 5", status: "PUBLIC", location: "[LOCATION REDACTED]" },
+      { id: "SCDO-5", name: "SCIENTIFIC OFFICES DESK 5", status: "SECURE", location: "[HAMILTON OFFICE COMPLEX]" },
+      { id: "CCC-1", name: "CRISIS CMD CTR CONSOLE", status: "RESTRICTED", location: "[JFK FLOOR TWO]" },
+      { id: "ARC-1", name: "ARCHIVAL DEPT. CONSOLE", status: "UNKNOWN", location: "[LOCATION UNKNOWN - CONTACT SYSADMIN!]" },
+      { id: "ARC-7", name: "ARCHIVAL DEPT. DESK 7", status: "SECURE", location: "[LOCATION UNKNOWN - CONTACT SYSADMIN!]" },
+      { id: "AAC-12", name: "AUDITING OFFICES DESK 12", status: "[CLASSIFIED]", location: "[CLASSIFIED]" },
+      { id: "EC-2", name: "ETHICS COMMITTEE OFFICE DATABASE ACCESS POINT", status: "MONITORING", location: "[MP WING]" }
+    ];
+
+    const terminal = document.getElementById("terminal");
+    const statusEl = document.getElementById("status");
+    const powerButton = document.getElementById("powerButton");
+    const launchButton = document.getElementById("launchButton");
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const rnd = (n) => Math.floor(Math.random() * n);
+
+    function autoScrollTerminal() {
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function pickNode() {
+      return nodes[rnd(nodes.length)];
+    }
+
+    function fakeIPv4() {
+      return `${10 + rnd(200)}.${rnd(256)}.${rnd(256)}.${2 + rnd(220)}`;
+    }
+
+    function fakeProxy() {
+      return `proxy-${100 + rnd(900)}.seg-${rnd(16).toString(16).toUpperCase()}.int`;
+    }
+
+    function fakeHex(size = 8) {
+      const chars = "ABCDEF0123456789";
+      let out = "";
+      for (let i = 0; i < size; i++) out += chars[rnd(chars.length)];
+      return out;
+    }
+
+    function addLine(text = "") {
+      const el = document.createElement("div");
+      el.className = "line";
+      el.textContent = text;
+      terminal.appendChild(el);
+      autoScrollTerminal();
+      return el;
+    }
+
+    async function typeInto(el, text, speed = timing.char) {
+      el.textContent = "";
+      for (const ch of text) {
+        el.textContent += ch;
+        autoScrollTerminal();
+        await sleep(speed);
+      }
+    }
+
+    async function typeLine(text, prefix = "> ") {
+      const el = addLine();
+      await typeInto(el, `${prefix}${text}`);
+      await sleep(timing.line);
+      return el;
+    }
+
+    async function progressLine(label) {
+      const el = addLine();
+      const width = 20;
+      for (let i = 0; i <= width; i++) {
+        const pct = Math.round((i / width) * 100).toString().padStart(3, " ");
+        el.textContent = `> ${label.padEnd(30, " ")} [${"#".repeat(i)}${" ".repeat(width - i)}] ${pct}%`;
+        autoScrollTerminal();
+        await sleep(timing.progressMin + rnd(timing.progressRand));
+      }
+      await sleep(timing.line);
+    }
+
+    async function runNodeScan() {
+      const entries = [];
+      let selected = pickNode();
+
+      addLine("> SCAN RESULT MATRIX");
+      addLine("  Name       Type   Address         Proxy         Status");
+      addLine("  ---------------------------------------------------------");
+
+      const tableRows = [];
+      for (let i = 0; i < 8; i++) {
+        tableRows.push(addLine(""));
+      }
+
+      for (let i = 0; i < tableRows.length; i++) {
+        const candidate = pickNode();
+        const ip = fakeIPv4();
+        const proxy = `seg-${rnd(16).toString(16).toUpperCase()}${rnd(10)}`;
+        const nodeType = i % 2 === 0 ? "XDN" : "UDP";
+        const status = i === 0 ? "Selected" : "Registered";
+
+        entries[i] = { candidate, ip, proxy, nodeType, status };
+
+        const name = candidate.id.padEnd(10, " ");
+        const type = nodeType.padEnd(6, " ");
+        const addr = ip.padEnd(16, " ");
+        const px = proxy.padEnd(13, " ");
+        tableRows[i].textContent = `  ${name}${type}${addr}${px}${status}`;
+
+        autoScrollTerminal();
+        await sleep(timing.scanTick);
+      }
+
+      selected = entries[0].candidate;
+      addLine(`> LINK LOCKED  NODE=${selected.id}  IP=${entries[0].ip}  PROXY=${entries[0].proxy}  RTT=${15 + rnd(40)}ms`);
+      await sleep(timing.line);
+      return selected;
+    }
+
+    async function showNode(node) {
+      const details = [
+        `  NODE ID   : ${node.id}`,
+        `  HOSTNAME  : ${node.name}`,
+        `  STATUS    : ${node.status}`,
+        `  LOCATION  : ${node.location}`,
+        `  IPV4      : ${fakeIPv4()}`,
+        `  PROXY     : ${fakeProxy()}`,
+        `  SESSION   : ${fakeHex(12)}`
+      ];
+
+      for (const detail of details) {
+        const row = addLine();
+        await typeInto(row, detail, Math.max(8, timing.char - 8));
+        await sleep(timing.detailDelay);
+      }
+    }
+
+    function openConsole() {
+      const popup = window.open(TARGET_URL, "_blank", "noopener,noreferrer");
+      if (!popup) window.location.href = TARGET_URL;
+    }
+
+    async function boot() {
+      powerButton.disabled = true;
+      powerButton.classList.add("on");
+      terminal.innerHTML = "";
+      launchButton.disabled = true;
+      statusEl.textContent = "BOOT SEQUENCE RUNNING...";
+
+      for (const line of preBootLines) {
+        await typeLine(line, "");
+      }
+
+      addLine("");
+
+      await typeLine(ldosLines[0]);
+      await typeLine(ldosLines[1]);
+      await typeLine(ldosLines[2]);
+      await typeLine(ldosLines[3]);
+
+      addLine("");
+      await progressLine(ldosLines[4]);
+      await progressLine(ldosLines[5]);
+      await progressLine(ldosLines[6]);
+      addLine("");
+
+      const node = await runNodeScan();
+      await typeLine(`CONNECTING TO NODE ${node.id}`);
+      await showNode(node);
+      addLine("");
+
+      await typeLine(ldosLines[8]);
+      await typeLine(ldosLines[9]);
+      await typeLine(ldosLines[10]);
+
+      const prompt = addLine("C:\\LDOS>");
+      const cursor = document.createElement("span");
+      cursor.className = "cursor";
+      prompt.appendChild(cursor);
+      autoScrollTerminal();
+
+      statusEl.textContent = "SYSTEM ONLINE - AUTO REDIRECT DISABLED";
+      launchButton.disabled = false;
+    }
+
+    powerButton.addEventListener("click", boot);
+    launchButton.addEventListener("click", openConsole);
+  </script>
+</body>
+</html>
