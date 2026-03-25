@@ -56,8 +56,8 @@
     .power-btn {
       width: 62px;
       height: 62px;
-      border: 1px solid var(--fg);
-      background: #0a0a0a;
+      border: none;
+      background: transparent;
       color: var(--fg-bright);
       cursor: pointer;
       padding: 0;
@@ -84,7 +84,6 @@
 
     .power-btn.on {
       color: var(--fg-bright);
-      border-color: var(--fg-bright);
       cursor: not-allowed;
     }
 
@@ -447,6 +446,10 @@
       powerButton.classList.add("on");
       powerIcon.src = POWER_IMG_ON;
       powerIcon.alt = "Power on";
+
+      setTimeout(() => {
+        powerButton.style.visibility = "hidden";
+      }, 5000);
 
       terminal.innerHTML = "";
       launchButton.disabled = true;
