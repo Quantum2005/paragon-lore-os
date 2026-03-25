@@ -56,35 +56,22 @@
     .power-btn {
       width: 62px;
       height: 62px;
-      border-radius: 50%;
-      border: 2px solid var(--fg);
+      border: 1px solid var(--fg);
       background: #0a0a0a;
       color: var(--fg-bright);
       cursor: pointer;
-      position: relative;
+      padding: 0;
+      display: grid;
+      place-items: center;
       transition: transform 120ms ease;
     }
 
-    .power-btn::before {
-      content: "";
-      width: 26px;
-      height: 26px;
-      border: 3px solid currentColor;
-      border-radius: 50%;
-      position: absolute;
-      top: 17px;
-      left: 16px;
-    }
-
-    .power-btn::after {
-      content: "";
-      width: 4px;
-      height: 16px;
-      background: currentColor;
-      position: absolute;
-      top: 7px;
-      left: 28px;
-      border-radius: 2px;
+    .power-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      display: block;
     }
 
     .power-btn:hover { transform: scale(1.04); }
@@ -151,9 +138,10 @@
 </head>
 <body>
   <main class="screen" role="application" aria-label="LDOS boot screen">
+    <header class="titlebar">LDOS SYSTEM CONSOLE</header>
 
     <div class="power-wrap">
-      <button id="powerButton" class="power-btn" title="Power" aria-label="Power on"></button>
+      <button id="powerButton" class="power-btn" title="Power" aria-label="Power on"><img id="powerIcon" src="./assets/power-off.png" alt="Power off" /></button>
     </div>
 
     <section id="terminal" class="terminal" aria-live="polite"></section>
@@ -166,6 +154,8 @@
 
   <script>
     const TARGET_URL = "https://sites.google.com/view/ldoperating-system/console";
+    const POWER_IMG_OFF = "./assets/power-off.png";
+    const POWER_IMG_ON = "./assets/power-on.png";
 
     const preBootTemplates = [
       "Starting MS-DOS...",
@@ -209,7 +199,7 @@
 
     // Timing controls: increase values to slow down, decrease to speed up.
     const timing = {
-      char: 10,
+      char: 18,
       line: 180,
       scanTick: 145,
       detailDelay: 75,
@@ -229,6 +219,7 @@
 
     const terminal = document.getElementById("terminal");
     const powerButton = document.getElementById("powerButton");
+    const powerIcon = document.getElementById("powerIcon");
     const launchButton = document.getElementById("launchButton");
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -355,6 +346,14 @@
       await sleep(timing.line);
     }
 
+    async function renderTransitionBox() {
+      addLine("+--------------------------------------------+");
+      addLine("|  PRE-BOOT CHECKS COMPLETE                  |");
+      addLine("|  PREPARING MACHINE SPECIFICATION TABLE...  |");
+      addLine("+--------------------------------------------+");
+      await sleep(timing.line);
+    }
+
     async function renderMachineSpecs() {
       const info = buildMachineInfo();
       addLine("> CURRENT MACHINE SPECIFICATION TABLE");
@@ -446,7 +445,8 @@
     async function boot() {
       powerButton.disabled = true;
       powerButton.classList.add("on");
-      powerButton.style.visibility = "hidden";
+      powerIcon.src = POWER_IMG_ON;
+      powerIcon.alt = "Power on";
 
       terminal.innerHTML = "";
       launchButton.disabled = true;
@@ -458,6 +458,11 @@
         await typeLine(line, "", true);
       }
 
+      addLine("");
+      addLine("");
+      addLine("");
+      addLine("");
+      await renderTransitionBox();
       addLine("");
       await renderMachineSpecs();
       addLine("");
