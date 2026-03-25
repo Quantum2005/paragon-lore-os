@@ -144,7 +144,6 @@
 
     <section id="terminal" class="terminal" aria-live="polite"></section>
 
-
     <div class="launch-wrap">
       <button id="launchButton" class="launch-btn" disabled>OPEN MAIN CONSOLE</button>
     </div>
@@ -173,17 +172,16 @@
     ];
 
     const ldosLines = [
-      "LDOS V5.0 - BUILT FOR ARMED RESEARCH SITE 40",
-      "AMBROSE SOFTWARE DEVELOPMENT GROUP",
-      "INITIALIZING SECURITY BUS",
-      "SYNCING RTC",
-      "LOADING BOOT PROGRAM",
-      "COMPILING F-LDOS INTRANET",
-      "COMPILING BITNET COMMS V2.4A",
+      "LDOS V5.1 - DEVELOPED FOR ARMED RESEARCH SITE 40",
+      "DEVELOPED BY AMBROSE SOFTWARE GROUP LTD, CALIFORNIA",
+      "INITIALIZING SECURITY BUS...",
+      "SYNCING RTC...",
+      "LOADING BOOT PROGRAM...",
+      "COMPILING LDOSINTRANET.SYS",
+      "COMPILING BITNET COMMUNICATIONS DRIVER V2.4A",
       "SCANNING AVAILABLE NODES",
       "LOADING GRAPHICAL INTERFACE",
-      "INTERFACE READY",
-      "SYSTEM READY - AWAITING OPERATOR ACTION"
+      "INTERFACE READY"
     ];
 
     // Configurable pools used for synthetic machine profile values.
@@ -208,11 +206,11 @@
 
     const nodes = [
       { id: "ASU-5", name: "APPALACHIA STATE UNIV. NODE 5", status: "PUBLIC", location: "[LOCATION REDACTED]" },
-      { id: "SCDO-5", name: "SCIENTIFIC OFFICES DESK 5", status: "SECURE", location: "[HAMILTON OFFICE COMPLEX]" },
-      { id: "CCC-1", name: "CRISIS CMD CTR CONSOLE", status: "RESTRICTED", location: "[JFK FLOOR TWO]" },
+      { id: "SCD-9", name: "SCIENTIFIC OFFICES DESK 5", status: "SECURE", location: "[HAMILTON OFFICE COMPLEX]" },
+      { id: "VAO-1", name: "CDC OFFICE DESK 1", status: "SECURE", location: "[CLASS D CONTAINMENT ZONE]" },
       { id: "ARC-1", name: "ARCHIVAL DEPT. CONSOLE", status: "UNKNOWN", location: "[LOCATION UNKNOWN - CONTACT SYSADMIN!]" },
-      { id: "ARC-7", name: "ARCHIVAL DEPT. DESK 7", status: "SECURE", location: "[LOCATION UNKNOWN - CONTACT SYSADMIN!]" },
-      { id: "AAC-12", name: "AUDITING OFFICES DESK 12", status: "[CLASSIFIED]", location: "[CLASSIFIED]" },
+      { id: "CM-0", name: "COMMUNICATIONS DEPARTMENT OFFICE", status: "SECURE", location: "[HAMILTON SERVER ROOM]" },
+      { id: "AAC-12", name: "CONTROL ROOM OFFICES DESK 12", status: "[CLASSIFIED]", location: "[CLASSIFIED]" },
       { id: "EC-2", name: "ETHICS COMMITTEE OFFICE DATABASE ACCESS POINT", status: "MONITORING", location: "[MP WING]" }
     ];
 
@@ -347,16 +345,16 @@
 
     async function renderTransitionBox() {
       addLine("+--------------------------------------------+");
-      addLine("|  PRE-BOOT CHECKS COMPLETE                  |");
-      addLine("|  PREPARING MACHINE SPECIFICATION TABLE...  |");
+      addLine("|   PRE-BOOT CHECKS COMPLETE  - DEVICE OK    |");
+      addLine("|           MACHINE SPECIFICATIONS           |");
       addLine("+--------------------------------------------+");
       await sleep(timing.line);
     }
 
     async function renderMachineSpecs() {
       const info = buildMachineInfo();
-      addLine("> CURRENT MACHINE SPECIFICATION TABLE");
-      addLine("  Item       Value");
+      addLine("> PARSING...");
+      addLine("  HARDWARE |           SPECIFICATIONS");
       addLine("  ----------------------------------------------");
 
       const rows = [
@@ -382,7 +380,7 @@
       const entries = [];
       let selected = pickNode();
 
-      addLine("> SCAN RESULT MATRIX");
+      addLine("> NETWORK SCAN -OPT -SEC");
       addLine("  Name       Type   Address         Proxy         Status");
       addLine("  ---------------------------------------------------------");
 
@@ -424,7 +422,7 @@
         `  HOSTNAME  : ${node.name}`,
         `  STATUS    : ${node.status}`,
         `  LOCATION  : ${node.location}`,
-        `  IPV4      : ${fakeIPv4()}`,
+        `  IP        : ${fakeIPv4()}`,
         `  PROXY     : ${fakeProxy()}`,
         `  SESSION   : ${fakeHex(12)}`
       ];
@@ -488,9 +486,9 @@
 
       await typeLine(ldosLines[8]);
       await typeLine(ldosLines[9]);
-      await typeLine(ldosLines[10]);
+      window.location.href = TARGET_URL;
 
-      const prompt = addLine("C:\\LDOS>");
+      const prompt = addLine("C:\\CONSOLE>");
       const cursor = document.createElement("span");
       cursor.className = "cursor";
       prompt.appendChild(cursor);
