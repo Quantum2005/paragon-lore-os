@@ -1,4 +1,9 @@
 /**
+ * DEPRECATED: This Apps Script backend is no longer used by the GitHub Pages flow.
+ * The active credential source is `accounts.json` with Base64-encoded fields.
+ */
+
+/**
  * Google Apps Script Web App for fixed-account authentication.
  *
  * Sheet format (tab name: Accounts):

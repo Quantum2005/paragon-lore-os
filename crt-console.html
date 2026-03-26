@@ -238,17 +238,10 @@
     const consoleInput = document.getElementById("consoleInput");
     const status = document.getElementById("status");
 
-    // Optional: set to your deployed Apps Script /exec URL. Leave placeholder to use local fixed accounts.
-    const AUTH_ENDPOINT = "https://script.google.com/macros/s/AKfycbxcZhFRSdqKWdmOU23cKTiYLWwPSIaapgQVcHdzswTjP0i_6A59eYgx3H8EB3XtWVB2/exec";
+    // GitHub Pages JSON credential store (Base64-encoded values).
+    const ACCOUNTS_DB_URL = "./accounts.json";
     // Next page to open on successful login (GitHub Pages-friendly relative path).
-    const NEXT_FILE_URL = "https://www.youtube.com";
-
-    // Local fixed accounts fallback for pure GitHub Pages hosting (client-side only).
-    const LOCAL_FIXED_ACCOUNTS = {
-      ADMIN: "ADMIN123",
-      OPERATOR: "OPERATOR123",
-      GUEST: "GUEST123"
-    };
+    const NEXT_FILE_URL = "./index.html";
 
     const bootLines = [
       { text: "[SYS ] RESTART REQUEST ACCEPTED......OK", hold: 160 },
@@ -274,33 +267,51 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const authenticate = async (username, password) => {
-      const unresolvedEndpoint = AUTH_ENDPOINT.includes("AKfycbxcZhFRSdqKWdmOU23cKTiYLWwPSIaapgQVcHdzswTjP0i_6A59eYgx3H8EB3XtWVB2");
+    let accountsCache = null;
 
-      if (unresolvedEndpoint) {
-        const expected = LOCAL_FIXED_ACCOUNTS[username];
-        if (!expected) {
-          return { ok: false, code: "UNKNOWN_USER", message: "Account not found." };
-        }
+    const decodeB64 = (value) => {
+      try {
+        return atob(String(value || ""));
+      } catch (_error) {
+        return "";
+      }
+    };
 
-        if (expected !== password) {
-          return { ok: false, code: "BAD_PASSWORD", message: "Incorrect password for fixed account. Try again." };
-        }
+    const loadAccounts = async () => {
+      if (accountsCache) return accountsCache;
 
-        return { ok: true, code: "AUTH_OK", message: "Authentication accepted." };
+      const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Accounts DB HTTP ${response.status}`);
       }
 
-      const response = await fetch(AUTH_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
+      const payload = await response.json();
+      accountsCache = Array.isArray(payload.accounts) ? payload.accounts : [];
+      return accountsCache;
+    };
+
+    const authenticate = async (username, password) => {
+      const accounts = await loadAccounts();
+
+      const account = accounts.find((entry) => {
+        const decodedUsername = decodeB64(entry.username_b64).trim().toUpperCase();
+        return decodedUsername === username;
       });
 
-      if (!response.ok) {
-        throw new Error(`Auth service HTTP ${response.status}`);
+      if (!account) {
+        return { ok: false, code: "UNKNOWN_USER", message: "Account not found." };
       }
 
-      return response.json();
+      if (account.enabled === false) {
+        return { ok: false, code: "DISABLED", message: "Account is disabled." };
+      }
+
+      const decodedPassword = decodeB64(account.password_b64);
+      if (decodedPassword !== password) {
+        return { ok: false, code: "BAD_PASSWORD", message: "Incorrect password for fixed account. Try again." };
+      }
+
+      return { ok: true, code: "AUTH_OK", message: "Authentication accepted." };
     };
 
     const proceedToNextFile = () => {
@@ -436,7 +447,7 @@
       const masked = "*".repeat(Math.max(6, value.length));
       await typeLine(consoleOutput, `PASSWORD: ${masked}`, 10);
       await typeLine(consoleOutput, `AUTH REQUEST SENT FOR ${state.username}...`, 10);
-      showStatus("VERIFYING WITH FIXED ACCOUNT DATABASE...", false);
+      showStatus("VERIFYING WITH GITHUB JSON ACCOUNT DATABASE...", false);
 
       try {
         const result = await authenticate(state.username, value);
