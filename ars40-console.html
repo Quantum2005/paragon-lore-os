@@ -99,24 +99,26 @@
     };
 
     const logo = [
-      String.raw`   ___    ____   _____      ____   _  _    `,
-      String.raw`  / _ |  / __ \ / ___/     / __/  | || |   `,
-      String.raw` / __ | / /_/ / \__ \   _ _\ \    | __ |   `,
-      String.raw`/_/ |_| \____/ /____/  (_|_)___/   |_||_|   `,
-      "ARMED RESEARCH SITE 40 :: COMMAND NODE"
+"   _____ __________       __________  __  ___   ______  ___  ______________  _   __     ",
+"  / ___// ____/ __ \     / ____/ __ \/ / / / | / / __ \/   |/_  __/  _/ __ \/ | / /     ",
+"  \__ \/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
+" ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
+"/____/\____/_/        /_/    \____/\____/_/ |_/_____/_/  |_/_/ /___/\____/_/ |_/        ",
+                                                                                   
+"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
     ];
 
     const placeholders = [
-      "type <filename> - Display a text file without modification (placeholder).",
-      "more <filename> - Display output one page at a time (placeholder).",
-      "edit <filename> - Open the text editor for file updates (placeholder)."
+      "type <filename> - placeholder: view file contents",
+      "more <filename> - placeholder: paginated output",
+      "edit <filename> - placeholder: launch text editor"
     ];
 
     const printHelp = () => {
       addLine("AVAILABLE COMMANDS:");
       addLine("  help   - Display this command reference.");
       addLine("  clear  - Clear visible console history.");
-      addLine("  logout - Return to CRT login without startup diagnostics.");
+      addLine("  logout - Log out of your account.");
       addLine("  exit   - Exit the Console and power off the machine.");
       placeholders.forEach((entry) => addLine(`  ${entry}`));
       if (activeRole === "administrator") {
@@ -124,8 +126,8 @@
         addLine("  register <user> <pass> - Create registry account (administrator only).");
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
-      addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
-      addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
+      addLine("SECURITY NOTICE: Do not use passwords. Passwords are encoded only in Base64.");
+      addLine("REGISTER NOTE: New accounts are cached and written on logout/exit of this account.");
     };
 
     const bootHiddenRedirect = async () => {
@@ -138,9 +140,9 @@
         await wait(24);
       }
 
-      await typeLine("[REDIRECT] TRANSFERRING TO ARMED RESEARCH SITE 40 COMMAND NODE", 11);
-      await typeLine(`[AUTH] USER ${user} / ROLE ${activeRole.toUpperCase()} VERIFIED`, 11);
-      await typeLine("[CONSOLE] DRAWING SITE BANNER...", 10);
+      await typeLine("[SYS ] [LOADING CONSOLE COMMANDS]", 11);
+      await typeLine(`[AUTH] USER ${user} / STATUS ${activeRole.toUpperCase()} VERIFIED`, 11);
+      await typeLine("[CONSOLE] DRAWING GRAPHICS...", 10);
 
       for (const line of logo) {
         await typeLine(line, 6);
@@ -187,7 +189,7 @@
 
       if (cmd === "goto") {
         if (activeRole !== "administrator") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          showStatus("ACCESS DENIED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
 
@@ -205,7 +207,7 @@
 
       if (cmd === "register") {
         if (activeRole !== "administrator") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          showStatus("ACCESS DEINED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
 
@@ -229,6 +231,7 @@
 
     const logoutToCrt = async () => {
       consoleInput.disabled = true;
+      await persistPendingRegistrations();
       addLine("SIGNING OUT TO CRT-CONSOLE...");
       await wait(300);
       window.location.href = LOGIN_URL;
