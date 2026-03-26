@@ -98,12 +98,13 @@
 
     const printHelp = () => {
       addLine("AVAILABLE COMMANDS:");
-      addLine("  help   - display list of commands");
-      addLine("  logout - return to crt-console without startup");
-      addLine("  exit   - power off to index.html");
+      addLine("  help   - Display this command reference.");
+      addLine("  clear  - Clear visible console history.");
+      addLine("  logout - Log out of your account.");
+      addLine("  exit   - Exit the Console and power off the machine.");
       placeholders.forEach((entry) => addLine(`  ${entry}`));
       if (activeRole === "administrator") {
-        addLine("  goto <url> - administrator-only URL redirect");
+        addLine("  goto <url> - Navigate to a specified URL (administrator only).");
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
     };
@@ -120,7 +121,7 @@
 
       await typeLine("[SYS ] [LOADING CONSOLE COMMANDS]", 11);
       await typeLine(`[AUTH] USER ${user} / STATUS ${activeRole.toUpperCase()} VERIFIED`, 11);
-      await typeLine("[CONSOLE] DRAWING SITE BANNER...", 10);
+      await typeLine("[CONSOLE] DRAWING GRAPHICS...", 10);
 
       for (const line of logo) {
         await typeLine(line, 6);
@@ -144,14 +145,20 @@
         return;
       }
 
+      if (cmd === "clear") {
+        output.innerHTML = "";
+        clearStatus();
+        return;
+      }
+
       if (cmd === "logout") {
-        addLine("THANK YOU FOR USING THE CONSOLE - LOGGING OUT...");
+        addLine("THANK YOU FOR USING THE CONSOLE - LOGGING OUT....");
         window.location.href = LOGIN_URL;
         return;
       }
 
       if (cmd === "exit") {
-        addLine("MACHINE POWERING OFF... PLEASE DO NOT REMOVE STORAGE VOLUMES!");
+        addLine("DEVICE POWERING OFF... PLEASE DO NOT REMOVE STORAGE VOLUMES!");
         window.location.href = POWER_OFF_URL;
         return;
       }

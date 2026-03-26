@@ -201,7 +201,7 @@
         }
       } else {
         addLine(consoleOutput, "SESSION RESTORED FROM LOGOUT.");
-        addLine(consoleOutput, "Please enter your USERNAME and press [ENTER].");
+        addLine(consoleOutput, "Enter USERNAME and press [ENTER].");
       }
 
       promptRow.classList.add("show");
@@ -262,7 +262,6 @@
 
         if (result.ok) {
           await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
-          showStatus("LOGIN ACCEPTED - LOADING NEXT PAGE", false);
           const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
             .slice(-8)
             .map((line) => line.textContent)
