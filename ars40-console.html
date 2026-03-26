@@ -207,7 +207,7 @@
 
       if (cmd === "register") {
         if (activeRole !== "administrator") {
-          showStatus("ACCESS DEINED [ERROR 401 UNAUTHORIZED]", true);
+          showStatus("ACCESS DENIED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
 
@@ -230,10 +230,11 @@
     };
 
     const logoutToCrt = async () => {
-      consoleInput.disabled = true;
-      await persistPendingRegistrations();
+      sessionStorage.removeItem("ars40:lastLines");
+      sessionStorage.removeItem("ars40:user");
+      sessionStorage.removeItem("ars40:role");
       addLine("SIGNING OUT TO CRT-CONSOLE...");
-      await wait(300);
+      await wait(120);
       window.location.href = LOGIN_URL;
     };
 
