@@ -12,3 +12,13 @@
     "nodejs_compat"
   ]
 }
+
+{
+  "d1_databases": [
+    {
+      "binding": "ars40_db",
+      "database_name": "ars40_db",
+      "database_id": "3f97e0bf-ccfc-4b29-b5c4-9c55d24354e4"
+    }
+  ]
+}
