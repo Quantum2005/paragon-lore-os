@@ -3,27 +3,32 @@
     {
       "username_b64": "QURNSU4=",
       "password_b64": "QURNSU4xMjM=",
-      "enabled": true
+      "enabled": true,
+      "role": "administrator"
     },
     {
       "username_b64": "T1BFUkFUT1I=",
       "password_b64": "T1BFUkFUT1IxMjM=",
-      "enabled": true
+      "enabled": true,
+      "role": "editor"
     },
     {
       "username_b64": "R1VFU1Q=",
       "password_b64": "R1VFU1QxMjM=",
-      "enabled": true
+      "enabled": true,
+      "role": "standard"
     },
     {
       "username_b64": "VEVTVA==",
       "password_b64": "dGVzdDEyMw==",
-      "enabled": true
+      "enabled": true,
+      "role": "standard"
     },
     {
       "username_b64": "RUdH",
       "password_b64": "ZWdn",
-      "enabled": false
+      "enabled": false,
+      "role": "standard"
     }
   ]
 }

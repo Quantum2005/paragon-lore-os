@@ -33,7 +33,7 @@
       width: min(1180px, 100%);
       height: min(98vh, 860px);
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
+      grid-template-rows: auto 1fr;
       background: var(--bg);
     }
 
@@ -76,8 +76,7 @@
 
     .power-btn:hover { transform: scale(1.04); }
 
-    .power-btn:focus-visible,
-    .launch-btn:focus-visible {
+    .power-btn:focus-visible {
       outline: 1px dashed var(--fg-bright);
       outline-offset: 4px;
     }
@@ -99,26 +98,6 @@
     }
 
     .line { min-height: 1.2em; }
-
-    .launch-wrap {
-      display: grid;
-      place-items: center;
-      padding-top: 0.2rem;
-    }
-
-    .launch-btn {
-      background: #0a0a0a;
-      color: var(--fg-bright);
-      border: 1px solid var(--fg);
-      padding: 0.45rem 0.8rem;
-      font-family: inherit;
-      cursor: pointer;
-    }
-
-    .launch-btn:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
 
     .cursor {
       display: inline-block;
@@ -144,9 +123,6 @@
 
     <section id="terminal" class="terminal" aria-live="polite"></section>
 
-    <div class="launch-wrap">
-      <button id="launchButton" class="launch-btn" disabled>OPEN MAIN CONSOLE</button>
-    </div>
   </main>
 
   <script>
@@ -217,13 +193,19 @@
     const terminal = document.getElementById("terminal");
     const powerButton = document.getElementById("powerButton");
     const powerIcon = document.getElementById("powerIcon");
-    const launchButton = document.getElementById("launchButton");
+    let allowManualScroll = false;
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const rnd = (n) => Math.floor(Math.random() * n);
 
     function autoScrollTerminal() {
       terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function preventManualScroll(event) {
+      if (!allowManualScroll) {
+        event.preventDefault();
+      }
     }
 
     function pickNode() {
@@ -450,7 +432,7 @@
       }, 5000);
 
       terminal.innerHTML = "";
-      launchButton.disabled = true;
+      allowManualScroll = false;
 
       const sessionStart = new Date();
       const preBootLines = buildPreBootLines(sessionStart);
@@ -486,6 +468,7 @@
 
       await typeLine(ldosLines[8]);
       await typeLine(ldosLines[9]);
+      allowManualScroll = true;
       openConsole();
 
       const prompt = addLine("C:\\CONSOLE>");
@@ -494,11 +477,17 @@
       prompt.appendChild(cursor);
       autoScrollTerminal();
 
-      launchButton.disabled = false;
     }
 
     powerButton.addEventListener("click", boot);
-    launchButton.addEventListener("click", openConsole);
+    terminal.addEventListener("wheel", preventManualScroll, { passive: false });
+    terminal.addEventListener("touchmove", preventManualScroll, { passive: false });
+    terminal.addEventListener("keydown", (event) => {
+      const blockedKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
+      if (!allowManualScroll && blockedKeys.includes(event.key)) {
+        event.preventDefault();
+      }
+    });
   </script>
 </body>
 </html>
