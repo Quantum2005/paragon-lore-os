@@ -240,6 +240,8 @@
 
     // Deploy the Apps Script as a Web App and paste its /exec URL below.
     const AUTH_ENDPOINT = "https://script.google.com/macros/s/AKfycbxcZhFRSdqKWdmOU23cKTiYLWwPSIaapgQVcHdzswTjP0i_6A59eYgx3H8EB3XtWVB2/exec";
+    // File to load after successful authentication inside the same iframe/page.
+    const NEXT_FILE_URL = "./main-console.html";
 
     const bootLines = [
       { text: "[SYS ] RESTART REQUEST ACCEPTED......OK", hold: 160 },
@@ -277,6 +279,10 @@
       }
 
       return response.json();
+    };
+
+    const proceedToNextFile = () => {
+      window.location.href = NEXT_FILE_URL;
     };
 
     const addLine = (container, text) => {
@@ -415,15 +421,9 @@
 
         if (result.ok) {
           await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
-          showStatus("LOGIN ACCEPTED", false);
-
-          consoleInput.value = "";
-          consoleInput.type = "text";
-          state.stage = "username";
-          state.username = "";
-          pathLabel.textContent = "C://CONSOLE";
-          await typeLine(consoleOutput, "", 10);
-          await typeLine(consoleOutput, "Enter USERNAME and press [ENTER].", 10);
+          showStatus("LOGIN ACCEPTED - LOADING NEXT FILE", false);
+          await wait(260);
+          proceedToNextFile();
           return;
         }
 
