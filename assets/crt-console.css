@@ -1,0 +1,205 @@
+    :root {
+      --bg: #020603;
+      --fg: #89ff9f;
+      --fg-dim: #53ba68;
+      --scanline: rgba(0, 0, 0, 0.24);
+      --glow: rgba(137, 255, 159, 0.3);
+      --error: #ff9696;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: "Courier New", Courier, monospace;
+      color: var(--fg);
+    }
+
+    .crt {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      padding: clamp(14px, 2.6vw, 30px);
+      background: radial-gradient(circle at center, #0d2015 0%, #041008 58%, #000 100%);
+      text-shadow: 0 0 1px var(--fg), 0 0 5px var(--glow);
+      filter: contrast(1.07) saturate(1.08);
+      animation: bootFlicker 4.8s steps(1, end) 1 forwards;
+    }
+
+    .crt::before,
+    .crt::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .crt::before {
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 2px,
+        var(--scanline) 3px,
+        transparent 4px
+      );
+      opacity: 0.78;
+      mix-blend-mode: multiply;
+    }
+
+    .crt::after {
+      background: radial-gradient(circle at center, transparent 58%, rgba(0, 0, 0, 0.62) 100%);
+    }
+
+    .noise {
+      position: absolute;
+      inset: 0;
+      opacity: 0.09;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.7) 0.6px, transparent 0.7px);
+      background-size: 3px 3px;
+      animation: noise 90ms steps(2) infinite;
+    }
+
+    .screen {
+      position: relative;
+      width: min(980px, 100%);
+      height: 100%;
+      margin: 0 auto;
+      z-index: 1;
+      border: 1px solid rgba(137, 255, 159, 0.25);
+      background: rgba(0, 9, 4, 0.43);
+      padding: 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .boot-output,
+    .console-output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.36;
+      font-size: clamp(13px, 1.75vw, 18px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(137, 255, 159, 0.35) rgba(0, 0, 0, 0.25);
+    }
+
+    .boot-output {
+      flex: 1;
+    }
+
+    .console-output {
+      flex: 1;
+      display: none;
+      opacity: 0;
+    }
+
+    .console-output.show {
+      display: block;
+      animation: fadeIn 1.6s ease forwards;
+    }
+
+    .line {
+      opacity: 0;
+      animation: blinkIn 260ms steps(1, end) forwards;
+    }
+
+    .typing-cursor {
+      display: inline-block;
+      width: 0.62ch;
+      margin-left: 0.1ch;
+      animation: cursorBlink 0.85s steps(1, end) infinite;
+    }
+
+    .prompt-row {
+      display: none;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: clamp(13px, 1.75vw, 18px);
+      opacity: 0;
+    }
+
+    .prompt-row.show {
+      display: flex;
+      animation: fadeIn 900ms ease forwards;
+    }
+
+    .path {
+      color: var(--fg-dim);
+      min-width: 15ch;
+      letter-spacing: 0.02em;
+    }
+
+    .prompt {
+      color: var(--fg);
+    }
+
+    .console-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--fg);
+      font-family: inherit;
+      font-size: inherit;
+      outline: none;
+      caret-color: var(--fg);
+      padding: 0;
+      min-width: 12ch;
+    }
+
+    .status {
+      min-height: 1.3em;
+      font-size: clamp(12px, 1.5vw, 16px);
+      color: var(--error);
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .status.show {
+      opacity: 1;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes blinkIn {
+      0%, 38% { opacity: 0; }
+      39%, 52% { opacity: 1; }
+      53%, 65% { opacity: 0; }
+      66%, 100% { opacity: 1; }
+    }
+
+    @keyframes cursorBlink {
+      50% { opacity: 0; }
+    }
+
+    @keyframes noise {
+      from { transform: translate(0, 0); }
+      to { transform: translate(-3px, 2px); }
+    }
+
+    @keyframes bootFlicker {
+      0% { opacity: 0; filter: brightness(0); }
+      4% { opacity: 0.12; filter: brightness(2.8); }
+      8% { opacity: 0.46; filter: brightness(0.28); }
+      13% { opacity: 0.25; filter: brightness(2.2); }
+      18% { opacity: 0.58; filter: brightness(0.5); }
+      23% { opacity: 0.34; filter: brightness(1.8); }
+      29% { opacity: 0.75; filter: brightness(0.65); }
+      35% { opacity: 0.5; filter: brightness(1.5); }
+      42% { opacity: 0.8; filter: brightness(0.8); }
+      50% { opacity: 0.61; filter: brightness(1.35); }
+      60% { opacity: 0.92; filter: brightness(0.88); }
+      72% { opacity: 0.8; filter: brightness(1.18); }
+      85% { opacity: 0.95; filter: brightness(0.95); }
+      100% { opacity: 1; filter: brightness(1); }
+    }
+  
