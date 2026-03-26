@@ -49,8 +49,7 @@
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
-    const ACCOUNTS_DB_URL = "https://api-worker.logicalsystems-yt.workers.dev";
-    const PENDING_ACCOUNTS_KEY = "ars40:pendingAccountRegistrations";
+    const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 
@@ -60,14 +59,6 @@
     pathLabel.textContent = `ARS40://${user}`;
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const encodeB64 = (value) => btoa(String(value || ""));
-    const decodeB64 = (value) => {
-      try {
-        return atob(String(value || ""));
-      } catch (_error) {
-        return "";
-      }
-    };
 
     const addLine = (text) => {
       const line = document.createElement("div");
@@ -229,7 +220,6 @@
 
     const powerOffAndExit = async () => {
       consoleInput.disabled = true;
-      await persistPendingRegistrations();
       addLine("SYSTEM NOTICE: EXIT command accepted.");
       await wait(320);
       addLine("Powering down console session...");
@@ -245,22 +235,6 @@
       addLine("SIGNING OUT TO CRT-CONSOLE...");
       await wait(300);
       window.location.href = LOGIN_URL;
-    };
-
-    const getAllAccounts = async () => {
-      const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error("Registry unavailable");
-      const payload = await response.json();
-      const baseAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
-      const pendingAccounts = (() => {
-        try {
-          const parsed = JSON.parse(sessionStorage.getItem(PENDING_ACCOUNTS_KEY) || "[]");
-          return Array.isArray(parsed) ? parsed : [];
-        } catch (_error) {
-          return [];
-        }
-      })();
-      return [...baseAccounts, ...pendingAccounts];
     };
 
     const registerAccount = async (args) => {
@@ -282,139 +256,23 @@
         return;
       }
 
-      addLine("SECURITY NOTICE: Do not use real passwords!!!!!!!");
+      addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const accounts = await getAllAccounts();
-        const exists = accounts.some((entry) => decodeB64(entry.username_b64).trim().toUpperCase() === username);
-        if (exists) {
-          showStatus("REGISTRATION FAILED: USERNAME ALREADY EXISTS", true);
+        const response = await fetch(`${ACCOUNTS_API_URL}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          showStatus(`REGISTRATION FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
           return;
         }
-
-        const pendingAccounts = (() => {
-          try {
-            const parsed = JSON.parse(sessionStorage.getItem(PENDING_ACCOUNTS_KEY) || "[]");
-            return Array.isArray(parsed) ? parsed : [];
-          } catch (_error) {
-            return [];
-          }
-        })();
-
-        pendingAccounts.push({
-          username_b64: encodeB64(username),
-          password_b64: encodeB64(password),
-          enabled: true,
-          role: "standard"
-        });
-
-        sessionStorage.setItem(PENDING_ACCOUNTS_KEY, JSON.stringify(pendingAccounts));
-        addLine(`ACCOUNT CACHED: ${username} (ROLE=STANDARD)`);
-        addLine("Pending write scheduled for logout/exit.");
+        addLine(`ACCOUNT REGISTERED: ${username} (ROLE=STANDARD)`);
       } catch (_error) {
         showStatus("REGISTRATION FAILED: REGISTRY WRITE ERROR", true);
       }
-    };
-
-    const persistPendingRegistrations = async () => {
-      const pendingAccounts = (() => {
-        try {
-          const parsed = JSON.parse(sessionStorage.getItem(PENDING_ACCOUNTS_KEY) || "[]");
-          return Array.isArray(parsed) ? parsed : [];
-        } catch (_error) {
-          return [];
-        }
-      })();
-
-      if (pendingAccounts.length === 0) return;
-
-      addLine(`SYNC: Writing ${pendingAccounts.length} pending account(s) to ${ACCOUNTS_DB_URL}...`);
-
-      try {
-        const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error("read-failed");
-        const payload = await response.json();
-        const baseAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
-
-        const existingNames = new Set(
-          baseAccounts.map((entry) => decodeB64(entry.username_b64).trim().toUpperCase())
-        );
-        const newUnique = pendingAccounts.filter((entry) => {
-          const userName = decodeB64(entry.username_b64).trim().toUpperCase();
-          if (existingNames.has(userName)) return false;
-          existingNames.add(userName);
-          return true;
-        });
-
-        if (newUnique.length === 0) {
-          sessionStorage.removeItem(PENDING_ACCOUNTS_KEY);
-          addLine("SYNC: No new accounts to write.");
-          return;
-        }
-
-        const updatedPayload = {
-          ...payload,
-          accounts: [...baseAccounts, ...newUnique]
-        };
-
-        const writeResponse = await fetch(ACCOUNTS_DB_URL, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updatedPayload, null, 2)
-        });
-
-        if (!writeResponse.ok) throw new Error("write-failed");
-
-        sessionStorage.removeItem(PENDING_ACCOUNTS_KEY);
-        addLine(`SYNC: Registry updated with ${newUnique.length} account(s).`);
-      } catch (_error) {
-        addLine(`SYNC WARNING: Auto-write to ${ACCOUNTS_DB_URL} failed in this environment.`);
-        addLine("SYNC WARNING: Pending registrations remain cached for later retry.");
-        addLine("SYNC: Downloading accounts patch file for manual replacement...");
-        try {
-          await downloadAccountsPatch();
-        } catch (_downloadError) {
-          addLine("SYNC WARNING: Could not generate patch download.");
-        }
-      }
-    };
-
-    const downloadAccountsPatch = async () => {
-      const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error("read-failed");
-      const payload = await response.json();
-      const baseAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
-      const pendingAccounts = (() => {
-        try {
-          const parsed = JSON.parse(sessionStorage.getItem(PENDING_ACCOUNTS_KEY) || "[]");
-          return Array.isArray(parsed) ? parsed : [];
-        } catch (_error) {
-          return [];
-        }
-      })();
-
-      const existingNames = new Set(
-        baseAccounts.map((entry) => decodeB64(entry.username_b64).trim().toUpperCase())
-      );
-
-      const mergedAccounts = [...baseAccounts];
-      for (const entry of pendingAccounts) {
-        const userName = decodeB64(entry.username_b64).trim().toUpperCase();
-        if (existingNames.has(userName)) continue;
-        existingNames.add(userName);
-        mergedAccounts.push(entry);
-      }
-
-      const patchPayload = { ...payload, accounts: mergedAccounts };
-      const blob = new Blob([JSON.stringify(patchPayload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "accounts-patch.json";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     };
 
     consoleInput.addEventListener("keydown", (event) => {
