@@ -124,10 +124,12 @@
       if (activeRole === "administrator") {
         addLine("  goto <url> - Navigate to a specified URL (administrator only).");
         addLine("  register <user> <pass> - Create registry account (administrator only).");
+        addLine("  setuser <id> <user> - Change username by DB id (administrator only).");
+        addLine("  setpass <id> <pass> - Change password by DB id (administrator only).");
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
-      addLine("SECURITY NOTICE: Do not use passwords. Passwords are encoded only in Base64.");
-      addLine("REGISTER NOTE: New accounts are cached and written on logout/exit of this account.");
+      addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
+      addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
     };
 
     const bootHiddenRedirect = async () => {
@@ -215,6 +217,26 @@
         return;
       }
 
+      if (cmd === "setuser") {
+        if (activeRole !== "administrator") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          return;
+        }
+
+        void adminUpdateUsername(args);
+        return;
+      }
+
+      if (cmd === "setpass") {
+        if (activeRole !== "administrator") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          return;
+        }
+
+        void adminUpdatePassword(args);
+        return;
+      }
+
       showStatus(`UNKNOWN COMMAND: ${cmd.toUpperCase()}`, true);
     };
 
@@ -273,6 +295,70 @@
         addLine(`ACCOUNT REGISTERED: ${username} (ROLE=STANDARD)`);
       } catch (_error) {
         showStatus("REGISTRATION FAILED: REGISTRY WRITE ERROR", true);
+      }
+    };
+
+    const adminUpdateUsername = async (args) => {
+      const id = Number(args[0]);
+      const nextUsername = (args[1] || "").trim().toUpperCase();
+
+      if (!Number.isInteger(id) || id <= 0 || !nextUsername) {
+        showStatus("USAGE: setuser <db_id> <new_username>", true);
+        return;
+      }
+
+      if (!/^[A-Z0-9_-]{3,20}$/.test(nextUsername)) {
+        showStatus("USERNAME MUST BE 3-20 CHARS: A-Z, 0-9, _, -", true);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-username`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, username: nextUsername })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          showStatus(`SETUSER FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
+          return;
+        }
+        addLine(`ACCOUNT UPDATED: ID ${id} USERNAME -> ${nextUsername}`);
+      } catch (_error) {
+        showStatus("SETUSER FAILED: AUTH API UNAVAILABLE", true);
+      }
+    };
+
+    const adminUpdatePassword = async (args) => {
+      const id = Number(args[0]);
+      const nextPassword = (args[1] || "").trim();
+
+      if (!Number.isInteger(id) || id <= 0 || !nextPassword) {
+        showStatus("USAGE: setpass <db_id> <new_password>", true);
+        return;
+      }
+
+      if (nextPassword.length < 4) {
+        showStatus("PASSWORD MUST BE AT LEAST 4 CHARACTERS", true);
+        return;
+      }
+
+      addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
+
+      try {
+        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, password: nextPassword })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          showStatus(`SETPASS FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
+          return;
+        }
+        addLine(`ACCOUNT UPDATED: ID ${id} PASSWORD CHANGED`);
+      } catch (_error) {
+        showStatus("SETPASS FAILED: AUTH API UNAVAILABLE", true);
       }
     };
 
