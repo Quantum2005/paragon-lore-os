@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARS-40 Console</title>
+  <link rel="stylesheet" href="./assets/crt-console.css" />
+  <style>
+    .poweroff-fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 900ms ease;
+      z-index: 9;
+    }
+
+    .poweroff-fade.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="crt" aria-label="CRT terminal interface">
+    <div class="noise" aria-hidden="true"></div>
+
+    <main class="screen" role="application" aria-label="Armed Research Site 40 terminal">
+      <section id="consoleOutput" class="console-output show" aria-live="polite"></section>
+
+      <div id="promptRow" class="prompt-row" aria-label="Console command input">
+        <span id="pathLabel" class="path">ARS40://TERM</span>
+        <span class="prompt">&gt;</span>
+        <input id="consoleInput" class="console-input" type="text" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div id="status" class="status" aria-live="polite"></div>
+    </main>
+  </div>
+  <div id="poweroffFade" class="poweroff-fade" aria-hidden="true"></div>
+
+  <script>
+    const output = document.getElementById("consoleOutput");
+    const promptRow = document.getElementById("promptRow");
+    const pathLabel = document.getElementById("pathLabel");
+    const consoleInput = document.getElementById("consoleInput");
+    const status = document.getElementById("status");
+    const poweroffFade = document.getElementById("poweroffFade");
+
+    const POWER_OFF_URL = "./index.html";
+    const LOGIN_URL = "./crt-console.html?resume=1";
+    const user = sessionStorage.getItem("ars40:user") || "GUEST";
+    const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
+
+    const roleAllowed = new Set(["standard", "editor", "administrator"]);
+    const activeRole = roleAllowed.has(role) ? role : "standard";
+
+    pathLabel.textContent = `ARS40://${user}`;
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const addLine = (text) => {
+      const line = document.createElement("div");
+      line.className = "line";
+      line.textContent = text;
+      output.appendChild(line);
+      output.scrollTop = output.scrollHeight;
+      return line;
+    };
+
+    const typeLine = (text, speed = 12) => new Promise((resolve) => {
+      const line = addLine("");
+      let i = 0;
+
+      const tick = () => {
+        line.innerHTML = `${text.slice(0, i)}<span class="typing-cursor">█</span>`;
+        i += 1;
+        if (i <= text.length) {
+          setTimeout(tick, speed);
+        } else {
+          line.textContent = text;
+          resolve();
+        }
+      };
+
+      tick();
+    });
+
+    const showStatus = (message, error = false) => {
+      status.textContent = message;
+      status.style.color = error ? "var(--error)" : "var(--fg)";
+      status.classList.add("show");
+    };
+
+    const clearStatus = () => {
+      status.textContent = "";
+      status.classList.remove("show");
+    };
+
+    const logo = [
+      String.raw`   ___    ____   _____      ____   _  _    `,
+      String.raw`  / _ |  / __ \ / ___/     / __/  | || |   `,
+      String.raw` / __ | / /_/ / \__ \   _ _\ \    | __ |   `,
+      String.raw`/_/ |_| \____/ /____/  (_|_)___/   |_||_|   `,
+      "ARMED RESEARCH SITE 40 :: COMMAND NODE"
+    ];
+
+    const placeholders = [
+      "type <filename> - Display a text file without modification (placeholder).",
+      "more <filename> - Display output one page at a time (placeholder).",
+      "edit <filename> - Open the text editor for file updates (placeholder)."
+    ];
+
+    const printHelp = () => {
+      addLine("AVAILABLE COMMANDS:");
+      addLine("  help   - Display this command reference.");
+      addLine("  clear  - Clear visible console history.");
+      addLine("  logout - Return to CRT login without startup diagnostics.");
+      addLine("  exit   - Exit the Console and power off the machine.");
+      placeholders.forEach((entry) => addLine(`  ${entry}`));
+      if (activeRole === "administrator") {
+        addLine("  goto <url> - Navigate to a specified URL (administrator only).");
+      }
+      addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
+    };
+
+    const bootHiddenRedirect = async () => {
+      const recentLines = JSON.parse(sessionStorage.getItem("ars40:lastLines") || "[]");
+      recentLines.forEach((line) => addLine(line));
+      await wait(220);
+
+      for (let i = 0; i < 10; i += 1) {
+        addLine(".");
+        await wait(24);
+      }
+
+      await typeLine("[REDIRECT] TRANSFERRING TO ARMED RESEARCH SITE 40 COMMAND NODE", 11);
+      await typeLine(`[AUTH] USER ${user} / ROLE ${activeRole.toUpperCase()} VERIFIED`, 11);
+      await typeLine("[CONSOLE] DRAWING SITE BANNER...", 10);
+
+      for (const line of logo) {
+        await typeLine(line, 6);
+      }
+
+      await typeLine("Type HELP and press [ENTER] to list available commands.", 11);
+      promptRow.classList.add("show");
+      consoleInput.focus();
+    };
+
+    const runCommand = (raw) => {
+      const input = raw.trim();
+      if (!input) return;
+
+      addLine(`>${input}`);
+      const [command, ...args] = input.split(/\s+/);
+      const cmd = command.toLowerCase();
+
+      if (cmd === "help") {
+        printHelp();
+        return;
+      }
+
+      if (cmd === "clear") {
+        output.innerHTML = "";
+        clearStatus();
+        return;
+      }
+
+      if (cmd === "logout") {
+        addLine("SIGNING OUT TO CRT-CONSOLE...");
+        window.location.href = LOGIN_URL;
+        return;
+      }
+
+      if (cmd === "exit") {
+        void powerOffAndExit();
+        return;
+      }
+
+      if (["type", "more", "edit"].includes(cmd)) {
+        addLine("PLACEHOLDER COMMAND ONLY. FEATURE TO BE IMPLEMENTED.");
+        return;
+      }
+
+      if (cmd === "goto") {
+        if (activeRole !== "administrator") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          return;
+        }
+
+        const target = args.join(" ").trim();
+        if (!target) {
+          showStatus("USAGE: goto <url>", true);
+          return;
+        }
+
+        const url = /^https?:\/\//i.test(target) ? target : `https://${target}`;
+        addLine(`REDIRECTING TO ${url}`);
+        window.location.href = url;
+        return;
+      }
+
+      showStatus(`UNKNOWN COMMAND: ${cmd.toUpperCase()}`, true);
+    };
+
+    const powerOffAndExit = async () => {
+      consoleInput.disabled = true;
+      addLine("SYSTEM NOTICE: EXIT command accepted.");
+      await wait(320);
+      addLine("Powering down console session...");
+      await wait(600);
+      poweroffFade.classList.add("show");
+      await wait(950);
+      window.location.href = POWER_OFF_URL;
+    };
+
+    consoleInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      clearStatus();
+      runCommand(consoleInput.value);
+      consoleInput.value = "";
+    });
+
+    bootHiddenRedirect();
+  </script>
+</body>
+</html>
