@@ -49,7 +49,7 @@
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
-    const ACCOUNTS_DB_URL = "./accounts.json";
+    const ACCOUNTS_DB_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const PENDING_ACCOUNTS_KEY = "ars40:pendingAccountRegistrations";
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
@@ -328,7 +328,7 @@
 
       if (pendingAccounts.length === 0) return;
 
-      addLine(`SYNC: Writing ${pendingAccounts.length} pending account(s) to accounts.json...`);
+      addLine(`SYNC: Writing ${pendingAccounts.length} pending account(s) to ${ACCOUNTS_DB_URL}...`);
 
       try {
         const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
@@ -366,11 +366,55 @@
         if (!writeResponse.ok) throw new Error("write-failed");
 
         sessionStorage.removeItem(PENDING_ACCOUNTS_KEY);
-        addLine(`SYNC: accounts.json updated with ${newUnique.length} account(s).`);
+        addLine(`SYNC: Registry updated with ${newUnique.length} account(s).`);
       } catch (_error) {
-        addLine("SYNC WARNING: Auto-write to accounts.json failed in this environment.");
+        addLine(`SYNC WARNING: Auto-write to ${ACCOUNTS_DB_URL} failed in this environment.`);
         addLine("SYNC WARNING: Pending registrations remain cached for later retry.");
+        addLine("SYNC: Downloading accounts patch file for manual replacement...");
+        try {
+          await downloadAccountsPatch();
+        } catch (_downloadError) {
+          addLine("SYNC WARNING: Could not generate patch download.");
+        }
       }
+    };
+
+    const downloadAccountsPatch = async () => {
+      const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
+      if (!response.ok) throw new Error("read-failed");
+      const payload = await response.json();
+      const baseAccounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const pendingAccounts = (() => {
+        try {
+          const parsed = JSON.parse(sessionStorage.getItem(PENDING_ACCOUNTS_KEY) || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_error) {
+          return [];
+        }
+      })();
+
+      const existingNames = new Set(
+        baseAccounts.map((entry) => decodeB64(entry.username_b64).trim().toUpperCase())
+      );
+
+      const mergedAccounts = [...baseAccounts];
+      for (const entry of pendingAccounts) {
+        const userName = decodeB64(entry.username_b64).trim().toUpperCase();
+        if (existingNames.has(userName)) continue;
+        existingNames.add(userName);
+        mergedAccounts.push(entry);
+      }
+
+      const patchPayload = { ...payload, accounts: mergedAccounts };
+      const blob = new Blob([JSON.stringify(patchPayload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "accounts-patch.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     };
 
     consoleInput.addEventListener("keydown", (event) => {
