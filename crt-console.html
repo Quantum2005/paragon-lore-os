@@ -47,18 +47,18 @@
       { text: "[BOOT] REINITIALIZING DEVICE TABLE...OK", hold: 180 },
       { text: "[BOOT] RELOADING NETWORK STACK........OK", hold: 180 },
       { text: "[APP ] STARTING CONSOLE KERNEL.......READY", hold: 620 },
-      { text: "[APP ] STARTING IRC LINK MODULE......READY", hold: 680 },
-      { text: "[APP ] STARTING AUTH SERVICE.........READY", hold: 740 },
-      { text: "[APP ] STARTING OPERATOR CONSOLE.....READY", hold: 760 },
+      { text: "[APP ] STARTING BTN LINK MODULE......READY", hold: 680 },
+      { text: "[APP ] STARTING AUTHENTICATION.......READY", hold: 740 },
+      { text: "[APP ] LOADING CONSOLE...............READY", hold: 760 },
       { text: "[MSG ] RESTART COMPLETE / STANDBY", hold: 180 }
     ];
 
     const greetingLines = [
-      { text: "MS-LINK 4.2 (C) 1989 TERMINAL SUBSYSTEM", hold: 140 },
+      { text: "LDoS 5.1 (C) 19XX TERMINAL SUBSYSTEM", hold: 140 },
       { text: "NODE: #ops-main / BAUD: 14400", hold: 180 },
-      { text: "AUTH GATE ONLINE.................READY", hold: 700 },
+      { text: "AUTH ONLINE.................READY", hold: 700 },
       { text: "", hold: 80 },
-      { text: "Enter USERNAME and press [ENTER].", hold: 120 }
+      { text: "Please enter your USERNAME and press [ENTER].", hold: 120 }
     ];
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -104,7 +104,7 @@
 
       const decodedPassword = decodeB64(account.password_b64);
       if (decodedPassword !== password) {
-        return { ok: false, code: "BAD_PASSWORD", message: "Incorrect password for fixed account. Try again." };
+        return { ok: false, code: "BAD_PASSWORD", message: "Password incorrect - try again." };
       }
 
       const role = String(account.role || "standard").toLowerCase();
@@ -244,7 +244,7 @@
         pathLabel.textContent = `C://${state.username}`;
 
         await typeLine(consoleOutput, `USERNAME ACCEPTED: ${state.username}`, 10);
-        await typeLine(consoleOutput, "Enter PASSWORD and press [ENTER].", 10);
+        await typeLine(consoleOutput, "Please enter your PASSWORD and press [ENTER].", 10);
 
         state.stage = "password";
         consoleInput.value = "";
@@ -286,8 +286,8 @@
         await typeLine(consoleOutput, `ACCESS DENIED: ${result.message || "AUTH FAILED"}`, 10);
         showStatus((result.message || "AUTH FAILED").toUpperCase());
       } catch (error) {
-        await typeLine(consoleOutput, "ACCESS DENIED: AUTH SERVICE UNAVAILABLE", 10);
-        showStatus("AUTH SERVICE UNAVAILABLE. TRY AGAIN.");
+        await typeLine(consoleOutput, "ACCESS DENIED: AUTHENTICATION SERVER UNAVAILABLE", 10);
+        showStatus("AUTH SERVICE UNAVAILABLE - TRY AGAIN LATER.");
       }
 
       consoleInput.value = "";
@@ -296,7 +296,7 @@
       state.username = "";
       pathLabel.textContent = "C://CONSOLE";
       await typeLine(consoleOutput, "", 10);
-      await typeLine(consoleOutput, "Enter USERNAME and press [ENTER].", 10);
+      await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);
     });
 
     bootSequence();
