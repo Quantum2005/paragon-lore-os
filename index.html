@@ -150,7 +150,7 @@
   </main>
 
   <script>
-    const TARGET_URL = "https://sites.google.com/view/ldoperating-system/console";
+    const TARGET_URL = "./crt-console.html";
     const POWER_IMG_OFF = "./assets/power-off.png";
     const POWER_IMG_ON = "./assets/power-on.png";
 
@@ -435,8 +435,8 @@
     }
 
     function openConsole() {
-      const popup = window.open(TARGET_URL, "_blank", "noopener,noreferrer");
-      if (!popup) window.location.href = TARGET_URL;
+      // Navigate in-place to the next GitHub Pages file.
+      window.location.href = TARGET_URL;
     }
 
     async function boot() {
@@ -486,7 +486,7 @@
 
       await typeLine(ldosLines[8]);
       await typeLine(ldosLines[9]);
-      window.location.href = TARGET_URL;
+      openConsole();
 
       const prompt = addLine("C:\\CONSOLE>");
       const cursor = document.createElement("span");
