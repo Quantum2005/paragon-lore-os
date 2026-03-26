@@ -1,0 +1,29 @@
+{
+  "accounts": [
+    {
+      "username_b64": "QURNSU4=",
+      "password_b64": "QURNSU4xMjM=",
+      "enabled": true
+    },
+    {
+      "username_b64": "T1BFUkFUT1I=",
+      "password_b64": "T1BFUkFUT1IxMjM=",
+      "enabled": true
+    },
+    {
+      "username_b64": "R1VFU1Q=",
+      "password_b64": "R1VFU1QxMjM=",
+      "enabled": true
+    },
+    {
+      "username_b64": "VEVTVA==",
+      "password_b64": "dGVzdDEyMw==",
+      "enabled": true
+    },
+    {
+      "username_b64": "RUdH",
+      "password_b64": "ZWdn",
+      "enabled": false
+    }
+  ]
+}
