@@ -81,11 +81,13 @@
     };
 
     const logo = [
-      "   ___    ____  _____   ____   ___  ",
-      "  / _ |  / __ \/ ___/  / __/  / _ \ ",
-      " / __ | / /_/ /\__ \  _\ \   / // / ",
-      "/_/ |_| \____//____/ /___/  /____/  ",
-      "ARMED RESEARCH SITE 40 :: COMMAND NODE"
+"        _____ __________       __________  __  ___   ______  ___  ______________  _   __",
+"  / ___// ____/ __ \     / ____/ __ \/ / / / | / / __ \/   |/_  __/  _/ __ \/ | / /     ",
+"  \__ \/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
+" ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
+"/____/\____/_/        /_/    \____/\____/_/ |_/_____/_/  |_/_/ /___/\____/_/ |_/        ",
+                                                                                   
+"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
     ];
 
     const placeholders = [
@@ -116,8 +118,8 @@
         await wait(24);
       }
 
-      await typeLine("[REDIRECT] TRANSFERRING TO ARMED RESEARCH SITE 40 COMMAND NODE", 11);
-      await typeLine(`[AUTH] USER ${user} / ROLE ${activeRole.toUpperCase()} VERIFIED`, 11);
+      await typeLine("[SYS ] [LOADING CONSOLE COMMANDS]", 11);
+      await typeLine(`[AUTH] USER ${user} / STATUS ${activeRole.toUpperCase()} VERIFIED`, 11);
       await typeLine("[CONSOLE] DRAWING SITE BANNER...", 10);
 
       for (const line of logo) {
@@ -143,13 +145,13 @@
       }
 
       if (cmd === "logout") {
-        addLine("SIGNING OUT TO CRT-CONSOLE...");
+        addLine("THANK YOU FOR USING THE CONSOLE - LOGGING OUT...");
         window.location.href = LOGIN_URL;
         return;
       }
 
       if (cmd === "exit") {
-        addLine("POWEROFF SEQUENCE STARTED...");
+        addLine("MACHINE POWERING OFF... PLEASE DO NOT REMOVE STORAGE VOLUMES!");
         window.location.href = POWER_OFF_URL;
         return;
       }
@@ -161,7 +163,7 @@
 
       if (cmd === "goto") {
         if (activeRole !== "administrator") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+          showStatus("ACCESS DENIED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
 
