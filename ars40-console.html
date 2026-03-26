@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ARS-40 Console</title>
   <link rel="stylesheet" href="./assets/crt-console.css" />
+  <style>
+    .poweroff-fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 900ms ease;
+      z-index: 9;
+    }
+
+    .poweroff-fade.show {
+      opacity: 1;
+    }
+  </style>
 </head>
 <body>
   <div class="crt" aria-label="CRT terminal interface">
@@ -22,6 +37,7 @@
       <div id="status" class="status" aria-live="polite"></div>
     </main>
   </div>
+  <div id="poweroffFade" class="poweroff-fade" aria-hidden="true"></div>
 
   <script>
     const output = document.getElementById("consoleOutput");
@@ -29,6 +45,7 @@
     const pathLabel = document.getElementById("pathLabel");
     const consoleInput = document.getElementById("consoleInput");
     const status = document.getElementById("status");
+    const poweroffFade = document.getElementById("poweroffFade");
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
@@ -81,7 +98,7 @@
     };
 
     const logo = [
-"        _____ __________       __________  __  ___   ______  ___  ______________  _   __",
+"   _____ __________       __________  __  ___   ______  ___  ______________  _   __     ",
 "  / ___// ____/ __ \     / ____/ __ \/ / / / | / / __ \/   |/_  __/  _/ __ \/ | / /     ",
 "  \__ \/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
 " ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
@@ -158,8 +175,7 @@
       }
 
       if (cmd === "exit") {
-        addLine("DEVICE POWERING OFF... PLEASE DO NOT REMOVE STORAGE VOLUMES!");
-        window.location.href = POWER_OFF_URL;
+        void powerOffAndExit();
         return;
       }
 
@@ -187,6 +203,17 @@
       }
 
       showStatus(`UNKNOWN COMMAND: ${cmd.toUpperCase()}`, true);
+    };
+
+    const powerOffAndExit = async () => {
+      consoleInput.disabled = true;
+      addLine("SYSTEM NOTICE: EXIT command accepted.");
+      await wait(320);
+      addLine("Powering down console session...");
+      await wait(600);
+      poweroffFade.classList.add("show");
+      await wait(950);
+      window.location.href = POWER_OFF_URL;
     };
 
     consoleInput.addEventListener("keydown", (event) => {
