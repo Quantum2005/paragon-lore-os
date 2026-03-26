@@ -95,7 +95,13 @@
       });
 
       if (!account) {
-        return { ok: false, code: "UNKNOWN_USER", message: "Account not found." };
+        return {
+          ok: true,
+          code: "GUEST_SESSION",
+          message: "Account not found in registry. Entering guest mode.",
+          role: "standard",
+          username
+        };
       }
 
       if (account.enabled === false) {
@@ -108,7 +114,7 @@
       }
 
       const role = String(account.role || "standard").toLowerCase();
-      return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role };
+      return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role, username };
     };
 
     const proceedToNextFile = () => {
@@ -261,7 +267,12 @@
         const result = await authenticate(state.username, value);
 
         if (result.ok) {
-          await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
+          if (result.code === "GUEST_SESSION") {
+            await typeLine(consoleOutput, `GUEST ACCESS GRANTED: ${state.username}`, 10);
+            await typeLine(consoleOutput, "NOTICE: GUEST ACCOUNT ACTIVE (STANDARD MODE)", 10);
+          } else {
+            await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
+          }
           const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
             .slice(-8)
             .map((line) => line.textContent)
