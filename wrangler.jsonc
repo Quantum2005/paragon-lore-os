@@ -10,8 +10,8 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
-  ]
-"d1_databases":, [
+  ],
+  "d1_databases": [
     {
       "binding": "ars40_db",
       "database_name": "ars40_db",
@@ -19,4 +19,3 @@
     }
   ]
 }
-
