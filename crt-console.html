@@ -34,10 +34,10 @@
     const consoleInput = document.getElementById("consoleInput");
     const status = document.getElementById("status");
 
-    // GitHub Pages JSON credential store (Base64-encoded values).
-    const ACCOUNTS_DB_URL = "./accounts.json";
+    // Remote account API.
+    const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     // Next page to open on successful login (GitHub Pages-friendly relative path).
-    const NEXT_FILE_URL = "./index.html";
+    const NEXT_FILE_URL = "./ars40-console.html";
 
     const bootLines = [
       { text: "[SYS ] RESTART REQUEST ACCEPTED......OK", hold: 160 },
@@ -63,51 +63,38 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    let accountsCache = null;
-
-    const decodeB64 = (value) => {
-      try {
-        return atob(String(value || ""));
-      } catch (_error) {
-        return "";
-      }
-    };
-
-    const loadAccounts = async () => {
-      if (accountsCache) return accountsCache;
-
-      const response = await fetch(ACCOUNTS_DB_URL, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Accounts DB HTTP ${response.status}`);
-      }
-
-      const payload = await response.json();
-      accountsCache = Array.isArray(payload.accounts) ? payload.accounts : [];
-      return accountsCache;
-    };
-
     const authenticate = async (username, password) => {
-      const accounts = await loadAccounts();
-
-      const account = accounts.find((entry) => {
-        const decodedUsername = decodeB64(entry.username_b64).trim().toUpperCase();
-        return decodedUsername === username;
+      const response = await fetch(`${ACCOUNTS_API_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
       });
 
-      if (!account) {
-        return { ok: false, code: "UNKNOWN_USER", message: "Account not found." };
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        if (response.status === 401) {
+          return { ok: false, code: "BAD_PASSWORD", message: payload.message || "Invalid credentials." };
+        }
+
+        if (response.status === 403) {
+          return { ok: false, code: "DISABLED", message: payload.message || "Account disabled." };
+        }
+
+        return { ok: false, code: "AUTH_FAILED", message: payload.message || "Authentication failed." };
       }
 
-      if (account.enabled === false) {
-        return { ok: false, code: "DISABLED", message: "Account is disabled." };
+      if (payload.guest) {
+        return {
+          ok: true,
+          code: "GUEST_SESSION",
+          message: "Account not found in registry. Entering guest mode.",
+          role: "standard",
+          username
+        };
       }
 
-      const decodedPassword = decodeB64(account.password_b64);
-      if (decodedPassword !== password) {
-        return { ok: false, code: "BAD_PASSWORD", message: "Incorrect password for fixed account. Try again." };
-      }
-
-      return { ok: true, code: "AUTH_OK", message: "Authentication accepted." };
+      const role = String(payload.role || "standard").toLowerCase();
+      return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role, username };
     };
 
     const proceedToNextFile = () => {
@@ -189,13 +176,18 @@
       username: ""
     };
 
-    const beginConsole = async () => {
+    const beginConsole = async (skipIntro = false) => {
       bootOutput.style.display = "none";
       consoleOutput.classList.add("show");
 
-      for (const entry of greetingLines) {
-        await typeLine(consoleOutput, entry.text, 14 + Math.floor(Math.random() * 13));
-        await wait(entry.hold);
+      if (!skipIntro) {
+        for (const entry of greetingLines) {
+          await typeLine(consoleOutput, entry.text, 14 + Math.floor(Math.random() * 13));
+          await wait(entry.hold);
+        }
+      } else {
+        addLine(consoleOutput, "SESSION RESTORED FROM LOGOUT.");
+        addLine(consoleOutput, "Enter USERNAME and press [ENTER].");
       }
 
       promptRow.classList.add("show");
@@ -203,6 +195,12 @@
     };
 
     const bootSequence = async () => {
+      const fastResume = new URLSearchParams(window.location.search).get("resume") === "1";
+      if (fastResume) {
+        await beginConsole(true);
+        return;
+      }
+
       await wait(1300);
 
       for (const entry of bootLines) {
@@ -243,14 +241,25 @@
       const masked = "*".repeat(Math.max(6, value.length));
       await typeLine(consoleOutput, `PASSWORD: ${masked}`, 10);
       await typeLine(consoleOutput, `AUTH REQUEST SENT FOR ${state.username}...`, 10);
-      showStatus("VERIFYING WITH GITHUB JSON ACCOUNT DATABASE...", false);
+      showStatus("VERIFYING WITH REMOTE AUTH SERVICE...", false);
 
       try {
         const result = await authenticate(state.username, value);
 
         if (result.ok) {
-          await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
-          showStatus("LOGIN ACCEPTED - LOADING NEXT PAGE", false);
+          if (result.code === "GUEST_SESSION") {
+            await typeLine(consoleOutput, `GUEST ACCESS GRANTED: ${state.username}`, 10);
+            await typeLine(consoleOutput, "NOTICE: GUEST ACCOUNT ACTIVE (STANDARD MODE)", 10);
+          } else {
+            await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
+          }
+          const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
+            .slice(-8)
+            .map((line) => line.textContent)
+            .filter(Boolean);
+          sessionStorage.setItem("ars40:lastLines", JSON.stringify(recentLines));
+          sessionStorage.setItem("ars40:user", state.username);
+          sessionStorage.setItem("ars40:role", result.role || "standard");
           await wait(260);
           proceedToNextFile();
           return;
