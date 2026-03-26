@@ -37,7 +37,7 @@
     // GitHub Pages JSON credential store (Base64-encoded values).
     const ACCOUNTS_DB_URL = "./accounts.json";
     // Next page to open on successful login (GitHub Pages-friendly relative path).
-    const NEXT_FILE_URL = "./index.html";
+    const NEXT_FILE_URL = "./ars40-console.html";
 
     const bootLines = [
       { text: "[SYS ] RESTART REQUEST ACCEPTED......OK", hold: 160 },
@@ -107,7 +107,8 @@
         return { ok: false, code: "BAD_PASSWORD", message: "Incorrect password for fixed account. Try again." };
       }
 
-      return { ok: true, code: "AUTH_OK", message: "Authentication accepted." };
+      const role = String(account.role || "standard").toLowerCase();
+      return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role };
     };
 
     const proceedToNextFile = () => {
@@ -189,13 +190,18 @@
       username: ""
     };
 
-    const beginConsole = async () => {
+    const beginConsole = async (skipIntro = false) => {
       bootOutput.style.display = "none";
       consoleOutput.classList.add("show");
 
-      for (const entry of greetingLines) {
-        await typeLine(consoleOutput, entry.text, 14 + Math.floor(Math.random() * 13));
-        await wait(entry.hold);
+      if (!skipIntro) {
+        for (const entry of greetingLines) {
+          await typeLine(consoleOutput, entry.text, 14 + Math.floor(Math.random() * 13));
+          await wait(entry.hold);
+        }
+      } else {
+        addLine(consoleOutput, "SESSION RESTORED FROM LOGOUT.");
+        addLine(consoleOutput, "Enter USERNAME and press [ENTER].");
       }
 
       promptRow.classList.add("show");
@@ -203,6 +209,12 @@
     };
 
     const bootSequence = async () => {
+      const fastResume = new URLSearchParams(window.location.search).get("resume") === "1";
+      if (fastResume) {
+        await beginConsole(true);
+        return;
+      }
+
       await wait(1300);
 
       for (const entry of bootLines) {
@@ -251,6 +263,13 @@
         if (result.ok) {
           await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
           showStatus("LOGIN ACCEPTED - LOADING NEXT PAGE", false);
+          const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
+            .slice(-8)
+            .map((line) => line.textContent)
+            .filter(Boolean);
+          sessionStorage.setItem("ars40:lastLines", JSON.stringify(recentLines));
+          sessionStorage.setItem("ars40:user", state.username);
+          sessionStorage.setItem("ars40:role", result.role || "standard");
           await wait(260);
           proceedToNextFile();
           return;
