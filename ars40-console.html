@@ -49,7 +49,9 @@
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
+    const EDITOR_URL = "./editor.html";
     const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+    const FILES_API_URL = "/api";
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 
@@ -100,18 +102,12 @@
 
     const logo = [
 "   _____ __________       __________  __  ___   ______  ___  ______________  _   __     ",
-"  / ___// ____/ __ \     / ____/ __ \/ / / / | / / __ \/   |/_  __/  _/ __ \/ | / /     ",
-"  \__ \/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
+"  / ___// ____/ __ \\     / ____/ __ \\/ / / / | / / __ \\/   |/_  __/  _/ __ \\/ | / /     ",
+"  \\__ \\/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
 " ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
-"/____/\____/_/        /_/    \____/\____/_/ |_/_____/_/  |_/_/ /___/\____/_/ |_/        ",
+"/____/\\____/_/        /_/    \\____/\\____/_/ |_/_____/_/  |_/_/ /___/\\____/_/ |_/        ",
                                                                                    
 "                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
-    ];
-
-    const placeholders = [
-      "type <filename> - placeholder: view file contents",
-      "more <filename> - placeholder: paginated output",
-      "edit <filename> - placeholder: launch text editor"
     ];
 
     const printHelp = () => {
@@ -120,7 +116,12 @@
       addLine("  clear  - Clear visible console history.");
       addLine("  logout - Log out of your account.");
       addLine("  exit   - Exit the Console and power off the machine.");
-      placeholders.forEach((entry) => addLine(`  ${entry}`));
+      addLine("  files               - List files stored in D1.");
+      addLine("  type <filename>     - Display full file contents.");
+      addLine("  more <filename>     - Display first 25 lines.");
+      addLine("  edit <filename>     - Open integrated text editor.");
+      addLine("  create <filename>                    - Create local text file.");
+      addLine("  create <filename> --link <url>       - Create external link file.");
       if (activeRole === "administrator") {
         addLine("  goto <url> - Navigate to a specified URL (administrator only).");
         addLine("  register <user> <pass> - Create registry account (administrator only).");
@@ -130,6 +131,141 @@
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
       addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
+    };
+
+    const callApi = async (path, options = {}) => {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-ars40-user": String(user).toUpperCase(),
+        ...(options.headers || {})
+      };
+
+      const response = await fetch(`${FILES_API_URL}${path}`, {
+        ...options,
+        headers
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message || "API ERROR");
+      }
+      return payload;
+    };
+
+    const readFile = async (filename) => {
+      const payload = await callApi(`/file?name=${encodeURIComponent(filename)}`, { method: "GET" });
+      return payload.file;
+    };
+
+    const listFiles = async () => {
+      try {
+        const payload = await callApi("/files", { method: "GET" });
+        if (!payload.files?.length) {
+          addLine("NO FILES IN REGISTRY.");
+          return;
+        }
+
+        addLine("D1 FILE REGISTRY:");
+        payload.files.forEach((entry) => {
+          const kind = Number(entry.is_external) === 1 ? "LINK" : "TEXT";
+          addLine(`  ${entry.filename} [${kind}] UPDATED ${entry.updated_at}`);
+        });
+      } catch (error) {
+        showStatus(`FILES ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+      }
+    };
+
+    const runTypeCommand = async (filename, paginate = false) => {
+      if (!filename) {
+        showStatus(`USAGE: ${paginate ? "more" : "type"} <filename>`, true);
+        return;
+      }
+
+      try {
+        const file = await readFile(filename);
+        if (Number(file.is_external) === 1) {
+          addLine(`EXTERNAL LINK FILE: ${file.filename}`);
+          addLine(`URL: ${file.external_url}`);
+          return;
+        }
+
+        const lines = String(file.content || "").split(/\r?\n/);
+        const chunk = paginate ? lines.slice(0, 25) : lines;
+
+        addLine(`--- ${file.filename} ---`);
+        if (!chunk.length || (chunk.length === 1 && chunk[0] === "")) {
+          addLine("[EMPTY FILE]");
+        } else {
+          chunk.forEach((line) => addLine(line));
+        }
+
+        if (paginate && lines.length > 25) {
+          addLine(`[TRUNCATED] ${lines.length - 25} MORE LINE(S) AVAILABLE. USE TYPE.`);
+        }
+        addLine("--- EOF ---");
+      } catch (error) {
+        showStatus(`READ ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+      }
+    };
+
+    const runEditCommand = async (filename) => {
+      if (!filename) {
+        showStatus("USAGE: edit <filename>", true);
+        return;
+      }
+
+      try {
+        const file = await readFile(filename);
+        if (Number(file.is_external) === 1 && file.external_url) {
+          addLine(`EXTERNAL PAGE FOR ${file.filename}: ${file.external_url}`);
+          window.open(file.external_url, "_blank", "noopener");
+          showStatus("EXTERNAL LINK OPENED IN NEW PAGE.", false);
+          return;
+        }
+
+        window.location.href = `${EDITOR_URL}?file=${encodeURIComponent(filename)}`;
+      } catch (error) {
+        showStatus(`EDIT ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+      }
+    };
+
+    const runCreateCommand = async (args) => {
+      const filename = (args[0] || "").trim();
+      if (!filename) {
+        showStatus("USAGE: create <filename> [--link <url>]", true);
+        return;
+      }
+
+      const linkFlagIndex = args.findIndex((entry) => entry === "--link");
+      const externalUrl = linkFlagIndex >= 0 ? args.slice(linkFlagIndex + 1).join(" ").trim() : "";
+      const mode = externalUrl ? "external" : "local";
+
+      if (linkFlagIndex >= 0 && !externalUrl) {
+        showStatus("USAGE: create <filename> --link <url>", true);
+        return;
+      }
+
+      try {
+        await callApi("/file", {
+          method: "POST",
+          body: JSON.stringify({
+            filename,
+            mode,
+            externalUrl,
+            content: mode === "local" ? `# ${filename}\n` : ""
+          })
+        });
+
+        if (mode === "external") {
+          addLine(`EXTERNAL LINK FILE CREATED: ${filename}`);
+          addLine(`TARGET URL: ${externalUrl}`);
+        } else {
+          addLine(`LOCAL TEXT FILE CREATED: ${filename}`);
+          addLine("TIP: RUN 'edit <filename>' TO MODIFY CONTENT.");
+        }
+      } catch (error) {
+        showStatus(`CREATE ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+      }
     };
 
     const bootHiddenRedirect = async () => {
@@ -184,8 +320,28 @@
         return;
       }
 
-      if (["type", "more", "edit"].includes(cmd)) {
-        addLine("PLACEHOLDER COMMAND ONLY. FEATURE TO BE IMPLEMENTED.");
+      if (cmd === "files") {
+        void listFiles();
+        return;
+      }
+
+      if (cmd === "type") {
+        void runTypeCommand(args.join(" ").trim(), false);
+        return;
+      }
+
+      if (cmd === "more") {
+        void runTypeCommand(args.join(" ").trim(), true);
+        return;
+      }
+
+      if (cmd === "edit") {
+        void runEditCommand(args.join(" ").trim());
+        return;
+      }
+
+      if (cmd === "create") {
+        void runCreateCommand(args);
         return;
       }
 
