@@ -1,0 +1,29 @@
+ARS-40 Character Coverage Test
+
+Uppercase:
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+
+Lowercase:
+abcdefghijklmnopqrstuvwxyz
+
+Digits:
+0123456789
+
+Whitespace demo (spaces, tab, and blank lines):
+A B C
+A	B	C
+
+Punctuation & symbols:
+! " # $ % & ' ( ) * + , - . /
+: ; < = > ? @
+[ \ ] ^ _ `
+{ | } ~
+
+Extended keyboard mix:
+`~1!2@3#4$5%6^7&8*9(0)-_=+
+[{]}\|;:'",<.>/?
+
+Unicode sanity check:
+é ñ ü ç Ω λ 中 文 ✅
+
+End of test file.
