@@ -52,6 +52,17 @@
     const EDITOR_URL = "./editor.html";
     const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const FILES_API_URL = "/api";
+    const API_ERROR_MEANINGS = {
+      E_BINDING_MISSING: "Database binding missing in runtime.",
+      E_INVALID_FILENAME: "Filename is invalid. Allowed: a-z A-Z 0-9 . _ -",
+      E_FILE_NOT_FOUND: "Requested file does not exist.",
+      E_FILE_EXISTS: "A file with this name already exists.",
+      E_INVALID_EXTERNAL_URL: "External link URL is invalid.",
+      E_EXTERNAL_READONLY: "External link records cannot be edited as local text.",
+      E_BAD_JSON: "Backend received malformed JSON payload.",
+      E_UNSUPPORTED_ROUTE: "Unsupported API route/method.",
+      E_API_UNAVAILABLE: "API endpoint unavailable or returned non-JSON."
+    };
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 
@@ -122,6 +133,7 @@
       addLine("  edit <filename>     - Open integrated text editor.");
       addLine("  create <filename>                    - Create local text file.");
       addLine("  create <filename> --link <url>       - Create external link file.");
+      addLine("  errors              - List API error codes and meanings.");
       if (activeRole === "administrator") {
         addLine("  goto <url> - Navigate to a specified URL (administrator only).");
         addLine("  register <user> <pass> - Create registry account (administrator only).");
@@ -131,6 +143,27 @@
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
       addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
+    };
+
+    const printErrorCodes = () => {
+      addLine("API ERROR CODES:");
+      Object.entries(API_ERROR_MEANINGS).forEach(([code, meaning]) => {
+        addLine(`  ${code} - ${meaning}`);
+      });
+    };
+
+    const createApiError = (payload, status) => {
+      const error = new Error(payload?.message || `HTTP ${status}`);
+      error.code = payload?.code || "E_API_UNAVAILABLE";
+      error.status = status;
+      return error;
+    };
+
+    const formatApiError = (error, fallbackPrefix = "API ERROR") => {
+      const code = String(error?.code || "E_API_UNAVAILABLE").toUpperCase();
+      const meaning = API_ERROR_MEANINGS[code] || "Unexpected API failure.";
+      const detail = String(error?.message || meaning).toUpperCase();
+      return `${fallbackPrefix} [${code}] ${detail} - ${meaning.toUpperCase()}`;
     };
 
     const callApi = async (path, options = {}) => {
@@ -145,9 +178,17 @@
         headers
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const contentType = response.headers.get("content-type") || "";
+      let payload = {};
+      if (contentType.includes("application/json")) {
+        payload = await response.json().catch(() => ({}));
+      } else {
+        const raw = await response.text().catch(() => "");
+        payload = { code: "E_API_UNAVAILABLE", message: raw ? `Unexpected response: ${raw.slice(0, 120)}` : "API unavailable." };
+      }
+
       if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || "API ERROR");
+        throw createApiError(payload, response.status);
       }
       return payload;
     };
@@ -171,7 +212,7 @@
           addLine(`  ${entry.filename} [${kind}] UPDATED ${entry.updated_at}`);
         });
       } catch (error) {
-        showStatus(`FILES ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+        showStatus(formatApiError(error, "FILES ERROR"), true);
       }
     };
 
@@ -204,7 +245,7 @@
         }
         addLine("--- EOF ---");
       } catch (error) {
-        showStatus(`READ ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+        showStatus(formatApiError(error, "READ ERROR"), true);
       }
     };
 
@@ -225,7 +266,7 @@
 
         window.location.href = `${EDITOR_URL}?file=${encodeURIComponent(filename)}`;
       } catch (error) {
-        showStatus(`EDIT ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+        showStatus(formatApiError(error, "EDIT ERROR"), true);
       }
     };
 
@@ -264,7 +305,7 @@
           addLine("TIP: RUN 'edit <filename>' TO MODIFY CONTENT.");
         }
       } catch (error) {
-        showStatus(`CREATE ERROR: ${String(error.message || "UNKNOWN").toUpperCase()}`, true);
+        showStatus(formatApiError(error, "CREATE ERROR"), true);
       }
     };
 
@@ -342,6 +383,11 @@
 
       if (cmd === "create") {
         void runCreateCommand(args);
+        return;
+      }
+
+      if (cmd === "errors") {
+        printErrorCodes();
         return;
       }
 

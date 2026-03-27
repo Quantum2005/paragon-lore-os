@@ -4,6 +4,17 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type"
 };
 
+const ERROR_CODES = {
+  BINDING_MISSING: "E_BINDING_MISSING",
+  INVALID_FILENAME: "E_INVALID_FILENAME",
+  FILE_NOT_FOUND: "E_FILE_NOT_FOUND",
+  FILE_EXISTS: "E_FILE_EXISTS",
+  INVALID_EXTERNAL_URL: "E_INVALID_EXTERNAL_URL",
+  EXTERNAL_READONLY: "E_EXTERNAL_READONLY",
+  BAD_JSON: "E_BAD_JSON",
+  UNSUPPORTED_ROUTE: "E_UNSUPPORTED_ROUTE"
+};
+
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: {
@@ -36,7 +47,7 @@ const parseBody = async (request) => {
   try {
     return await request.json();
   } catch {
-    return {};
+    return null;
   }
 };
 
@@ -58,7 +69,7 @@ const normalizeUrl = (value) => {
 
 const routeApi = async (request, env, pathname) => {
   if (!env.ars40_db) {
-    return json({ ok: false, message: "D1 binding ars40_db is not configured." }, 500);
+    return json({ ok: false, code: ERROR_CODES.BINDING_MISSING, message: "D1 binding ars40_db is not configured." }, 500);
   }
 
   await ensureFileTable(env.ars40_db);
@@ -78,7 +89,7 @@ const routeApi = async (request, env, pathname) => {
     const filename = normalizeFilename(url.searchParams.get("name"));
 
     if (!validateFilename(filename)) {
-      return json({ ok: false, message: "Invalid filename." }, 400);
+      return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Invalid filename." }, 400);
     }
 
     const record = await env.ars40_db.prepare(`
@@ -89,7 +100,7 @@ const routeApi = async (request, env, pathname) => {
     `).bind(filename).first();
 
     if (!record) {
-      return json({ ok: false, message: "File not found." }, 404);
+      return json({ ok: false, code: ERROR_CODES.FILE_NOT_FOUND, message: "File not found." }, 404);
     }
 
     return json({ ok: true, file: record });
@@ -97,23 +108,26 @@ const routeApi = async (request, env, pathname) => {
 
   if (request.method === "POST" && pathname === "/api/file") {
     const body = await parseBody(request);
+    if (!body) {
+      return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Malformed JSON payload." }, 400);
+    }
     const filename = normalizeFilename(body.filename);
     const actor = getActor(request);
     const mode = String(body.mode || "local").toLowerCase();
 
     if (!validateFilename(filename)) {
-      return json({ ok: false, message: "Filename must be 1-80 chars: a-z, A-Z, 0-9, dot, dash, underscore." }, 400);
+      return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Filename must be 1-80 chars: a-z, A-Z, 0-9, dot, dash, underscore." }, 400);
     }
 
     const exists = await env.ars40_db.prepare("SELECT id FROM files WHERE filename = ?1").bind(filename).first();
     if (exists) {
-      return json({ ok: false, message: "File already exists." }, 409);
+      return json({ ok: false, code: ERROR_CODES.FILE_EXISTS, message: "File already exists." }, 409);
     }
 
     if (mode === "external") {
       const externalUrl = normalizeUrl(body.externalUrl);
       if (!externalUrl) {
-        return json({ ok: false, message: "A valid external URL is required for external mode." }, 400);
+        return json({ ok: false, code: ERROR_CODES.INVALID_EXTERNAL_URL, message: "A valid external URL is required for external mode." }, 400);
       }
 
       await env.ars40_db.prepare(`
@@ -135,10 +149,13 @@ const routeApi = async (request, env, pathname) => {
 
   if (request.method === "PUT" && pathname === "/api/file") {
     const body = await parseBody(request);
+    if (!body) {
+      return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Malformed JSON payload." }, 400);
+    }
     const filename = normalizeFilename(body.filename);
 
     if (!validateFilename(filename)) {
-      return json({ ok: false, message: "Invalid filename." }, 400);
+      return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Invalid filename." }, 400);
     }
 
     const existing = await env.ars40_db.prepare(`
@@ -149,11 +166,11 @@ const routeApi = async (request, env, pathname) => {
     `).bind(filename).first();
 
     if (!existing) {
-      return json({ ok: false, message: "File not found." }, 404);
+      return json({ ok: false, code: ERROR_CODES.FILE_NOT_FOUND, message: "File not found." }, 404);
     }
 
     if (Number(existing.is_external) === 1) {
-      return json({ ok: false, message: "External links cannot be edited locally." }, 409);
+      return json({ ok: false, code: ERROR_CODES.EXTERNAL_READONLY, message: "External links cannot be edited locally." }, 409);
     }
 
     const content = String(body.content || "");
@@ -168,7 +185,7 @@ const routeApi = async (request, env, pathname) => {
     return json({ ok: true, message: `Saved ${filename}.` });
   }
 
-  return json({ ok: false, message: "Unsupported API route." }, 404);
+  return json({ ok: false, code: ERROR_CODES.UNSUPPORTED_ROUTE, message: "Unsupported API route." }, 404);
 };
 
 export default {
