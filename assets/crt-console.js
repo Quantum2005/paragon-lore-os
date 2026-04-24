@@ -4,6 +4,7 @@ const promptRow = document.getElementById("promptRow");
 const pathLabel = document.getElementById("pathLabel");
 const consoleInput = document.getElementById("consoleInput");
 const status = document.getElementById("status");
+consoleInput.disabled = true;
 
 const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
 let activeBackendBase = "";
@@ -24,7 +25,7 @@ const fetchWithBackendFallback = async (path, options = {}) => {
     if (!response) continue;
 
     lastResponse = response;
-    if (response.status !== 404) {
+    if (response.status !== 404 && response.status !== 405) {
       activeBackendBase = base;
       return response;
     }
@@ -59,6 +60,19 @@ const greetingLines = [
 ];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const warmupBackend = async () => {
+  const probes = ["/auth/debug", "/api/files"];
+  for (const probe of probes) {
+    try {
+      await fetchWithBackendFallback(probe, { method: "GET" });
+    } catch {
+      // Best-effort warmup only.
+    }
+  }
+};
+
+const warmupPromise = warmupBackend();
 
 const authenticate = async (username, password) => {
   const response = await fetchWithBackendFallback("/auth/login", {
@@ -348,16 +362,19 @@ const beginConsole = async (skipIntro = false) => {
   }
 
   promptRow.classList.add("show");
+  consoleInput.disabled = false;
   consoleInput.focus();
 };
 
 const bootSequence = async () => {
   const fastResume = new URLSearchParams(window.location.search).get("resume") === "1";
   if (fastResume) {
+    await Promise.race([warmupPromise, wait(850)]);
     await beginConsole(true);
     return;
   }
 
+  await Promise.race([warmupPromise, wait(850)]);
   await wait(1300);
 
   for (const entry of bootLines) {
@@ -373,6 +390,8 @@ const bootSequence = async () => {
 
 consoleInput.addEventListener("keydown", async (event) => {
   if (event.key !== "Enter") return;
+  if (!promptRow.classList.contains("show")) return;
+  if (consoleInput.disabled) return;
   event.preventDefault();
   clearStatus();
 

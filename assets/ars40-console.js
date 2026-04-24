@@ -98,6 +98,16 @@
       status.textContent = "";
       status.classList.remove("show");
     };
+    let pendingInputHandler = null;
+
+    const requestConsoleInput = (question, options, handler) => {
+      const hidden = Boolean(options?.hidden);
+      pendingInputHandler = { handler, hidden };
+      addLine(question);
+      showStatus("AWAITING INPUT...", false);
+      consoleInput.type = hidden ? "password" : "text";
+      consoleInput.focus();
+    };
 
     const logo = [
 "   _____ __________       __________  __  ___   ______  ___  ______________  _   __     ",
@@ -106,7 +116,7 @@
 " ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
 "/____/\\____/_/        /_/    \\____/\\____/_/ |_/_____/_/  |_/_/ /___/\\____/_/ |_/        ",
                                                                                    
-"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
+"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                         "
     ];
 
     const printHelp = () => {
@@ -209,9 +219,20 @@
         return await readFile(filename);
       } catch (error) {
         if (String(error?.code || "").toUpperCase() !== "E_FILE_LOCKED") throw error;
-        const password = window.prompt(`FILE "${filename}" IS LOCKED. ENTER PASSWORD:`) || "";
-        if (!password) throw error;
-        return readFile(filename, password);
+        return new Promise((resolve, reject) => {
+          requestConsoleInput(`FILE "${filename}" IS LOCKED. ENTER PASSWORD:`, { hidden: true }, async (password) => {
+            if (!password) {
+              reject(error);
+              return;
+            }
+            try {
+              const unlocked = await readFile(filename, password);
+              resolve(unlocked);
+            } catch (unlockError) {
+              reject(unlockError);
+            }
+          });
+        });
       }
     };
 
@@ -389,7 +410,12 @@
 
       let lockPassword = "";
       if (lockEnabled) {
-        lockPassword = String(window.prompt(`SET LOCK PASSWORD FOR ${filename.toUpperCase()}:`) || "");
+        await new Promise((resolve) => {
+          requestConsoleInput(`SET LOCK PASSWORD FOR ${filename.toUpperCase()}:`, { hidden: true }, async (password) => {
+            lockPassword = String(password || "");
+            resolve();
+          });
+        });
         if (!lockPassword) {
           showStatus("LOCK ENABLED BUT PASSWORD NOT PROVIDED.", true);
           return;
@@ -444,9 +470,20 @@
       consoleInput.focus();
     };
 
-    const runCommand = (raw) => {
+    const runCommand = async (raw) => {
       const input = raw.trim();
       if (!input) return;
+
+      if (pendingInputHandler) {
+        const pending = pendingInputHandler;
+        pendingInputHandler = null;
+        try {
+          await pending.handler(input);
+        } finally {
+          consoleInput.type = "text";
+        }
+        return;
+      }
 
       addLine(`>${input}`);
       const [command, ...args] = input.split(/\s+/);
@@ -474,32 +511,32 @@
       }
 
       if (cmd === "files") {
-        void listFiles();
+        await listFiles();
         return;
       }
 
       if (cmd === "type") {
-        void runTypeCommand(args.join(" ").trim(), false);
+        await runTypeCommand(args.join(" ").trim(), false);
         return;
       }
 
       if (cmd === "more") {
-        void runTypeCommand(args.join(" ").trim(), true);
+        await runTypeCommand(args.join(" ").trim(), true);
         return;
       }
 
       if (cmd === "edit") {
-        void runEditCommand(args.join(" ").trim());
+        await runEditCommand(args.join(" ").trim());
         return;
       }
 
       if (cmd === "touch") {
-        void runTouchCommand(args.join(" ").trim());
+        await runTouchCommand(args.join(" ").trim());
         return;
       }
 
       if (cmd === "create") {
-        void runCreateCommand(args);
+        await runCreateCommand(args);
         return;
       }
 
@@ -532,7 +569,7 @@
           return;
         }
 
-        void registerAccount(args);
+        await registerAccount(args);
         return;
       }
 
@@ -542,7 +579,7 @@
           return;
         }
 
-        void adminUpdateUsername(args);
+        await adminUpdateUsername(args);
         return;
       }
 
@@ -552,7 +589,7 @@
           return;
         }
 
-        void adminUpdatePassword(args);
+        await adminUpdatePassword(args);
         return;
       }
 
@@ -562,7 +599,7 @@
           return;
         }
 
-        void elevateUserRole(args);
+        await elevateUserRole(args);
         return;
       }
 
@@ -691,12 +728,16 @@
       }
     };
 
-    consoleInput.addEventListener("keydown", (event) => {
+    consoleInput.addEventListener("keydown", async (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
       clearStatus();
-      runCommand(consoleInput.value);
+      if (!promptRow.classList.contains("show")) return;
+      await runCommand(consoleInput.value);
       consoleInput.value = "";
+      if (!pendingInputHandler) {
+        consoleInput.type = "text";
+      }
     });
 
     bootHiddenRedirect();
