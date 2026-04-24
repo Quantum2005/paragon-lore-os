@@ -1,0 +1,5 @@
+# Prevent worker/server and tooling files from being uploaded as static assets
+_worker.js
+worker.js
+scripts/
+wrangler.jsonc
