@@ -8,6 +8,8 @@ const status = document.getElementById("status");
 const params = new URLSearchParams(window.location.search);
 const filename = String(params.get("file") || "").trim();
 const user = (sessionStorage.getItem("ars40:user") || "GUEST").toUpperCase();
+const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+let activeBackendBase = "";
 const API_ERROR_MEANINGS = {
   E_BINDING_MISSING: "Database binding missing in runtime.",
   E_INVALID_FILENAME: "Filename is invalid.",
@@ -18,6 +20,29 @@ const API_ERROR_MEANINGS = {
   E_BAD_JSON: "Backend received malformed JSON payload.",
   E_UNSUPPORTED_ROUTE: "Unsupported API route/method.",
   E_API_UNAVAILABLE: "API endpoint unavailable or returned non-JSON."
+};
+
+const backendCandidates = () => {
+  const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
+    .map((value) => String(value || "").replace(/\/+$/, ""))
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+  return list;
+};
+
+const fetchWithBackendFallback = async (path, options = {}) => {
+  let lastResponse = null;
+  for (const base of backendCandidates()) {
+    const response = await fetch(`${base}${path}`, options).catch(() => null);
+    if (!response) continue;
+    lastResponse = response;
+    if (response.status !== 404 && response.status !== 405) {
+      activeBackendBase = base;
+      return response;
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  throw new Error(`No reachable backend for ${path}`);
 };
 
 fileLabel.textContent = `EDIT://${filename || "UNKNOWN"}`;
@@ -63,7 +88,7 @@ const fetchFile = async () => {
   }
 
   try {
-    const response = await fetch(`/api/file?name=${encodeURIComponent(filename)}`);
+    const response = await fetchWithBackendFallback(`/api/file?name=${encodeURIComponent(filename)}`);
     const payload = await parsePayload(response);
     if (!response.ok || payload.ok === false) {
       showStatus(formatApiError(createApiError(payload, response.status), "FILE LOAD FAILED"), true);
@@ -93,7 +118,7 @@ const save = async () => {
   if (!filename || editor.disabled) return;
 
   try {
-    const response = await fetch("/api/file", {
+    const response = await fetchWithBackendFallback("/api/file", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
