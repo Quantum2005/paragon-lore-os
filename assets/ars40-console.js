@@ -106,6 +106,7 @@
       addLine(question);
       showStatus("AWAITING INPUT...", false);
       consoleInput.type = hidden ? "password" : "text";
+      consoleInput.value = "";
       consoleInput.focus();
     };
 
@@ -755,8 +756,9 @@
       event.preventDefault();
       clearStatus();
       if (!promptRow.classList.contains("show")) return;
-      await runCommand(consoleInput.value);
+      const submitted = consoleInput.value;
       consoleInput.value = "";
+      await runCommand(submitted);
       if (!pendingInputHandler) {
         consoleInput.type = "text";
       }
