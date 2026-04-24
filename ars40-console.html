@@ -19,6 +19,30 @@
     .poweroff-fade.show {
       opacity: 1;
     }
+
+    .media-link {
+      color: var(--fg);
+      text-decoration: underline;
+      word-break: break-all;
+    }
+
+    .media-preview {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      border: 1px solid rgba(137, 255, 159, 0.35);
+      padding: 0.35rem;
+      background: rgba(0, 0, 0, 0.42);
+      max-width: min(620px, 100%);
+    }
+
+    .media-preview img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      filter: grayscale(100%) contrast(1.1);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>

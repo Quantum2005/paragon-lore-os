@@ -58,6 +58,18 @@ ON CONFLICT(filename) DO UPDATE SET
   external_url=excluded.external_url,
   updated_by='SYSTEM',
   updated_at=datetime('now');
+
+INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
+VALUES ('youtube.mp4', '', 1, 'https://samplelib.com/lib/preview/mp4/sample-5s.mp4', 'SYSTEM', 'SYSTEM')
+ON CONFLICT(filename) DO NOTHING;
+
+INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
+VALUES ('wikipedia.txt', '', 1, 'https://en.wikipedia.org/wiki/Main_Page', 'SYSTEM', 'SYSTEM')
+ON CONFLICT(filename) DO NOTHING;
+
+INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
+VALUES ('gyazo.jpg', '', 1, 'https://gyazo.com/64cbbfe5734d5368d7317139bd438d6d', 'SYSTEM', 'SYSTEM')
+ON CONFLICT(filename) DO NOTHING;
 `;
 
 await writeFile(new URL('../all-characters-test.txt', import.meta.url), fixture, 'utf8');
