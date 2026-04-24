@@ -15,6 +15,8 @@ const ERROR_CODES = {
   UNSUPPORTED_ROUTE: "E_UNSUPPORTED_ROUTE"
 };
 
+const DEFAULT_AUTH_API_BASE = "https://api-worker.logicalsystems-yt.workers.dev";
+
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: {
