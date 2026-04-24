@@ -100,7 +100,7 @@
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
-      addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
+      addLine("REGISTER NOTE: New accounts are created immediately via auth service.");
     };
 
     const printErrorCodes = () => {
