@@ -1,79 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ARS-40 Console</title>
-  <link rel="stylesheet" href="./assets/crt-console.css" />
-  <style>
-    .poweroff-fade {
-      position: fixed;
-      inset: 0;
-      background: #000;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 900ms ease;
-      z-index: 9;
-    }
-
-    .poweroff-fade.show {
-      opacity: 1;
-    }
-
-    .media-link {
-      color: var(--fg);
-      text-decoration: underline;
-      word-break: break-all;
-    }
-
-    .media-preview {
-      display: inline-flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      border: 1px solid rgba(137, 255, 159, 0.35);
-      padding: 0.35rem;
-      background: rgba(0, 0, 0, 0.42);
-      max-width: min(620px, 100%);
-    }
-
-    .media-preview img {
-      display: block;
-      max-width: 100%;
-      height: auto;
-      filter: grayscale(100%) contrast(1.1);
-      cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <div class="crt" aria-label="CRT terminal interface">
-    <div class="noise" aria-hidden="true"></div>
-
-    <main class="screen" role="application" aria-label="Armed Research Site 40 terminal">
-      <section id="consoleOutput" class="console-output show" aria-live="polite"></section>
-
-      <div id="promptRow" class="prompt-row" aria-label="Console command input">
-        <span id="pathLabel" class="path">ARS40://TERM</span>
-        <span class="prompt">&gt;</span>
-        <input id="consoleInput" class="console-input" type="text" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <div id="status" class="status" aria-live="polite"></div>
-    </main>
-  </div>
-  <div id="poweroffFade" class="poweroff-fade" aria-hidden="true"></div>
-
-  <script src="./assets/ars40-console.js"></script>
+    const output = document.getElementById("consoleOutput");
+    const promptRow = document.getElementById("promptRow");
+    const pathLabel = document.getElementById("pathLabel");
+    const consoleInput = document.getElementById("consoleInput");
+    const status = document.getElementById("status");
+    const poweroffFade = document.getElementById("poweroffFade");
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
-    const AUTH_API_DEFAULT = "https://api-worker.logicalsystems-yt.workers.dev";
-    const AUTH_API_OVERRIDE = new URLSearchParams(window.location.search).get("authApi");
-    const AUTH_API_BASES = [AUTH_API_OVERRIDE, window.location.origin, AUTH_API_DEFAULT]
-      .map((entry) => String(entry || "").trim().replace(/\/+$/, ""))
-      .filter(Boolean);
+    const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+    const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";
+    let activeBackendBase = "";
     const API_ERROR_MEANINGS = {
       E_BINDING_MISSING: "Database binding missing in runtime.",
       E_INVALID_FILENAME: "Filename is invalid. Allowed: a-z A-Z 0-9 . _ -",
@@ -95,6 +33,29 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    const backendCandidates = () => {
+      const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
+        .map((value) => String(value || "").replace(/\/+$/, ""))
+        .filter((value, index, arr) => arr.indexOf(value) === index);
+      return list;
+    };
+
+    const fetchWithBackendFallback = async (path, options = {}) => {
+      let lastResponse = null;
+      for (const base of backendCandidates()) {
+        const response = await fetch(`${base}${path}`, options).catch(() => null);
+        if (!response) continue;
+        lastResponse = response;
+        if (response.status !== 404 && response.status !== 405) {
+          activeBackendBase = base;
+          return response;
+        }
+      }
+
+      if (lastResponse) return lastResponse;
+      throw new Error(`No reachable backend for ${path}`);
+    };
+
     const addLine = (text) => {
       const line = document.createElement("div");
       line.className = "line";
@@ -102,40 +63,6 @@
       output.appendChild(line);
       output.scrollTop = output.scrollHeight;
       return line;
-    };
-
-    const addMediaPreview = (label, imageUrl, sourceUrl) => {
-      const wrapper = document.createElement("div");
-      wrapper.className = "line";
-
-      const container = document.createElement("div");
-      container.className = "media-preview";
-
-      const caption = document.createElement("div");
-      caption.textContent = label;
-
-      const link = document.createElement("a");
-      link.href = sourceUrl;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.className = "media-link";
-      link.textContent = sourceUrl;
-
-      const image = document.createElement("img");
-      image.src = imageUrl;
-      image.alt = label;
-      image.loading = "lazy";
-      image.addEventListener("click", () => {
-        window.open(sourceUrl, "_blank", "noopener");
-      });
-      image.addEventListener("error", () => {
-        addLine("IMAGE PREVIEW FAILED. OPENING SOURCE URL RECOMMENDED.");
-      });
-
-      container.append(caption, image, link);
-      wrapper.appendChild(container);
-      output.appendChild(wrapper);
-      output.scrollTop = output.scrollHeight;
     };
 
     const typeLine = (text, speed = 12) => new Promise((resolve) => {
@@ -198,25 +125,7 @@
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
-      addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
-    };
-
-    const fetchAuthApi = async (path, init) => {
-      let lastError;
-      for (const base of AUTH_API_BASES) {
-        try {
-          const response = await fetch(`${base}${path}`, init);
-          const contentType = response.headers.get("content-type") || "";
-          if (!contentType.includes("application/json")) {
-            lastError = new Error(`AUTH API NON-JSON RESPONSE FROM ${base}${path}`);
-            continue;
-          }
-          return response;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw lastError || new Error("AUTH API UNAVAILABLE");
+      addLine("REGISTER NOTE: New accounts are created immediately via auth service.");
     };
 
     const printErrorCodes = () => {
@@ -233,38 +142,6 @@
       return error;
     };
 
-    const extFromValue = (value) => {
-      const target = String(value || "").split("?")[0].split("#")[0];
-      const idx = target.lastIndexOf(".");
-      if (idx < 0) return "";
-      return target.slice(idx + 1).toLowerCase();
-    };
-
-    const classifyExternal = (filename, externalUrl) => {
-      const ext = extFromValue(filename) || extFromValue(externalUrl);
-      const videoExt = new Set(["mp4", "mpeg", "mpg", "mov", "m4v", "webm", "avi", "vid"]);
-      const imageExt = new Set(["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"]);
-      const textExt = new Set(["txt", "md", "log", "csv", "json", "xml"]);
-
-      if (videoExt.has(ext)) return { kind: "video", ext };
-      if (imageExt.has(ext)) return { kind: "image", ext };
-      if (textExt.has(ext)) return { kind: "text", ext };
-      return { kind: "external", ext };
-    };
-
-    const resolveImagePreviewUrl = (externalUrl) => {
-      try {
-        const parsed = new URL(externalUrl);
-        if (parsed.hostname.endsWith("gyazo.com")) {
-          const id = parsed.pathname.replace(/^\/+/, "").split("/")[0];
-          if (id) return `https://i.gyazo.com/${id}.png`;
-        }
-      } catch (_error) {
-        return externalUrl;
-      }
-      return externalUrl;
-    };
-
     const formatApiError = (error, fallbackPrefix = "API ERROR") => {
       const code = String(error?.code || "E_API_UNAVAILABLE").toUpperCase();
       const meaning = API_ERROR_MEANINGS[code] || "Unexpected API failure.";
@@ -279,7 +156,7 @@
         ...(options.headers || {})
       };
 
-      const response = await fetch(`${FILES_API_URL}${path}`, {
+      const response = await fetchWithBackendFallback(`${FILES_API_URL}${path}`, {
         ...options,
         headers
       });
@@ -293,6 +170,19 @@
         payload = { code: "E_API_UNAVAILABLE", message: raw ? `Unexpected response: ${raw.slice(0, 120)}` : "API unavailable." };
       }
 
+      if (!response.ok || payload.ok === false) {
+        throw createApiError(payload, response.status);
+      }
+      return payload;
+    };
+
+    const callAuthApi = async (path, body) => {
+      const response = await fetchWithBackendFallback(`${ACCOUNTS_API_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
         throw createApiError(payload, response.status);
       }
@@ -331,18 +221,8 @@
       try {
         const file = await readFile(filename);
         if (Number(file.is_external) === 1) {
-          const externalUrl = String(file.external_url || "");
-          const classification = classifyExternal(file.filename, externalUrl);
-
-          if (classification.kind === "image") {
-            addMediaPreview(`IMAGE PREVIEW (${file.filename})`, resolveImagePreviewUrl(externalUrl), externalUrl);
-            addLine("CLICK THE IMAGE OR LINK TO OPEN THE ORIGINAL SOURCE.");
-            return;
-          }
-
           addLine(`EXTERNAL LINK FILE: ${file.filename}`);
-          addLine(`OPENING ${classification.kind.toUpperCase()} TARGET IN NEW WINDOW...`);
-          window.open(externalUrl, "_blank", "noopener");
+          addLine(`URL: ${file.external_url}`);
           return;
         }
 
@@ -600,19 +480,10 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetchAuthApi("/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`REGISTRATION FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/register", { username, password });
         addLine(`ACCOUNT REGISTERED: ${username} (ROLE=STANDARD)`);
-      } catch (_error) {
-        showStatus("REGISTRATION FAILED: REGISTRY WRITE ERROR", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "REGISTRATION FAILED"), true);
       }
     };
 
@@ -631,19 +502,10 @@
       }
 
       try {
-        const response = await fetchAuthApi("/admin/update-username", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, username: nextUsername })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`SETUSER FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/admin/update-username", { id, username: nextUsername });
         addLine(`ACCOUNT UPDATED: ID ${id} USERNAME -> ${nextUsername}`);
-      } catch (_error) {
-        showStatus("SETUSER FAILED: AUTH API UNAVAILABLE", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "SETUSER FAILED"), true);
       }
     };
 
@@ -664,19 +526,10 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetchAuthApi("/admin/update-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, password: nextPassword })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`SETPASS FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/admin/update-password", { id, password: nextPassword });
         addLine(`ACCOUNT UPDATED: ID ${id} PASSWORD CHANGED`);
-      } catch (_error) {
-        showStatus("SETPASS FAILED: AUTH API UNAVAILABLE", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "SETPASS FAILED"), true);
       }
     };
 
@@ -689,6 +542,3 @@
     });
 
     bootHiddenRedirect();
-  </script>
-</body>
-</html>
