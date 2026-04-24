@@ -5,8 +5,34 @@ const pathLabel = document.getElementById("pathLabel");
 const consoleInput = document.getElementById("consoleInput");
 const status = document.getElementById("status");
 
-// Auth API is served through same-origin proxy route to avoid cross-origin failures.
-const ACCOUNTS_API_URL = "/auth";
+const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+let activeBackendBase = "";
+
+const backendCandidates = () => {
+  const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
+    .map((value) => String(value || "").replace(/\/+$/, ""))
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+  return list;
+};
+
+const withBase = (base, path) => `${base}${path}`;
+
+const fetchWithBackendFallback = async (path, options = {}) => {
+  let lastResponse = null;
+  for (const base of backendCandidates()) {
+    const response = await fetch(withBase(base, path), options).catch(() => null);
+    if (!response) continue;
+
+    lastResponse = response;
+    if (response.status !== 404) {
+      activeBackendBase = base;
+      return response;
+    }
+  }
+
+  if (lastResponse) return lastResponse;
+  throw new Error(`No reachable backend for ${path}`);
+};
 // Next page to open on successful login (GitHub Pages-friendly relative path).
 const NEXT_FILE_URL = "./ars40-console.html";
 
@@ -35,7 +61,7 @@ const greetingLines = [
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const authenticate = async (username, password) => {
-  const response = await fetch(`${ACCOUNTS_API_URL}/login`, {
+  const response = await fetchWithBackendFallback("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
@@ -151,7 +177,8 @@ const state = {
 const logsDebug = {
   panel: null,
   body: null,
-  timer: null
+  timer: null,
+  streak404: 0
 };
 
 const pushDebugLine = (text) => {
@@ -165,19 +192,22 @@ const pushDebugLine = (text) => {
 };
 
 const fetchJson = async (url, options = {}) => {
-  const response = await fetch(url, options);
+  const response = await fetchWithBackendFallback(url, options);
   const payload = await response.json().catch(() => ({}));
   return { response, payload };
 };
 
 const pollDebugStatus = async () => {
   if (!logsDebug.panel) return;
+  let authStatus = 0;
+  let filesStatus = 0;
   try {
-    const authDebug = await fetchJson(`${ACCOUNTS_API_URL}/debug`);
+    const authDebug = await fetchJson("/auth/debug");
+    authStatus = authDebug.response.status;
     if (authDebug.response.ok && authDebug.payload.ok) {
       const accounts = authDebug.payload?.db?.accounts;
       const files = authDebug.payload?.db?.files;
-      pushDebugLine(`AUTH DEBUG OK | accounts=${accounts} files=${files ?? "N/A"}`);
+      pushDebugLine(`AUTH DEBUG OK | base=${activeBackendBase || "same-origin"} accounts=${accounts} files=${files ?? "N/A"}`);
     } else {
       pushDebugLine(`AUTH DEBUG FAIL | status=${authDebug.response.status}`);
     }
@@ -187,6 +217,7 @@ const pollDebugStatus = async () => {
 
   try {
     const filesProbe = await fetchJson("/api/files");
+    filesStatus = filesProbe.response.status;
     if (filesProbe.response.ok) {
       const count = Array.isArray(filesProbe.payload?.files) ? filesProbe.payload.files.length : 0;
       pushDebugLine(`FILES API OK | count=${count}`);
@@ -195,6 +226,18 @@ const pollDebugStatus = async () => {
     }
   } catch (_error) {
     pushDebugLine("FILES API FAIL | request error");
+  }
+
+  if (authStatus === 404 && filesStatus === 404) {
+    logsDebug.streak404 += 1;
+    if (logsDebug.streak404 >= 2) {
+      pushDebugLine("BACKEND NOT FOUND ON SAME-ORIGIN OR FALLBACK URL. STOPPING AUTO-POLL.");
+      pushDebugLine("CHECK DEPLOYED WORKER ROUTES: /auth/* and /api/*");
+      clearInterval(logsDebug.timer);
+      logsDebug.timer = null;
+    }
+  } else {
+    logsDebug.streak404 = 0;
   }
 };
 
@@ -240,6 +283,7 @@ const closeLogsPanel = () => {
     logsDebug.panel.remove();
     logsDebug.panel = null;
     logsDebug.body = null;
+    logsDebug.streak404 = 0;
   }
 };
 
