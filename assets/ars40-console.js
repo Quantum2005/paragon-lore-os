@@ -32,6 +32,9 @@
     pathLabel.textContent = `ARS40://${user}`;
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "bmp", "webp", "avif", "svg"]);
+    const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "avi", "mkv", "m4v"]);
+    const TEXT_EXTENSIONS = new Set(["txt", "md", "log", "rtf", "csv", "json", "xml", "html", "htm"]);
 
     const backendCandidates = () => {
       const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
@@ -194,6 +197,98 @@
       return payload.file;
     };
 
+    const extensionFromPath = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      const clean = raw.split("?")[0].split("#")[0];
+      const dot = clean.lastIndexOf(".");
+      if (dot < 0) return "";
+      return clean.slice(dot + 1).toLowerCase();
+    };
+
+    const classifyExternalLink = (filename, url) => {
+      const fromFile = extensionFromPath(filename);
+      const fromUrl = extensionFromPath(url);
+      const ext = fromFile || fromUrl;
+      if (IMAGE_EXTENSIONS.has(ext)) return "image";
+      if (VIDEO_EXTENSIONS.has(ext)) return "video";
+      if (TEXT_EXTENSIONS.has(ext)) return "text";
+      return "other";
+    };
+
+    const openImageViewerWindow = (targetUrl, filename) => {
+      const viewer = window.open("", "_blank", "noopener");
+      if (!viewer) {
+        showStatus("POPUP BLOCKED. ALLOW POPUPS TO VIEW IMAGE LINK.", true);
+        return false;
+      }
+
+      const safeUrl = String(targetUrl || "").replace(/"/g, "&quot;");
+      const safeName = String(filename || "IMAGE").replace(/</g, "&lt;");
+      viewer.document.write(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeName}</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #020a04; color: #8bff9f; font-family: monospace; }
+    .wrap { width: 100%; height: 100%; display: grid; place-items: center; padding: 12px; box-sizing: border-box; }
+    .hint { position: fixed; top: 8px; left: 8px; font-size: 12px; opacity: 0.86; }
+    img {
+      max-width: min(92vw, 980px);
+      max-height: min(88vh, 760px);
+      image-rendering: pixelated;
+      filter: grayscale(1) sepia(1) hue-rotate(50deg) saturate(2.1) contrast(1.05);
+      cursor: pointer;
+      border: 1px solid rgba(139,255,159,0.35);
+      box-shadow: 0 0 0 1px rgba(139,255,159,0.18), 0 0 18px rgba(70, 255, 130, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">IMAGE LINK VIEWER — click image to open source page</div>
+  <div class="wrap">
+    <img id="linkedImage" src="${safeUrl}" alt="${safeName}" />
+  </div>
+  <script>
+    const srcUrl = ${JSON.stringify(targetUrl)};
+    const image = document.getElementById("linkedImage");
+    image.addEventListener("click", () => { window.location.href = srcUrl; });
+    image.addEventListener("error", () => {
+      document.body.insertAdjacentHTML("beforeend", "<div style='position:fixed;bottom:8px;left:8px;color:#ff9696'>FAILED TO LOAD IMAGE SOURCE</div>");
+    });
+  <\/script>
+</body>
+</html>`);
+      viewer.document.close();
+      return true;
+    };
+
+    const openExternalByType = (file, sourceCommand = "OPEN") => {
+      const category = classifyExternalLink(file?.filename, file?.external_url);
+      const url = String(file?.external_url || "");
+      if (!url) return false;
+
+      if (category === "image") {
+        const opened = openImageViewerWindow(url, file?.filename);
+        if (opened) {
+          addLine(`${sourceCommand}: IMAGE LINK OPENED IN CRT VIEWER (${file.filename})`);
+          showStatus("IMAGE VIEWER OPENED. CLICK IMAGE TO OPEN HOST LINK.", false);
+        }
+        return opened;
+      }
+
+      if (category === "video" || category === "text") {
+        window.open(url, "_blank", "noopener");
+        addLine(`${sourceCommand}: EXTERNAL ${category.toUpperCase()} LINK OPENED IN NEW TAB`);
+        showStatus(`EXTERNAL ${category.toUpperCase()} PAGE OPENED.`, false);
+        return true;
+      }
+
+      return false;
+    };
+
     const listFiles = async () => {
       try {
         const payload = await callApi("/files", { method: "GET" });
@@ -221,6 +316,9 @@
       try {
         const file = await readFile(filename);
         if (Number(file.is_external) === 1) {
+          if (openExternalByType(file, paginate ? "MORE" : "TYPE")) {
+            return;
+          }
           addLine(`EXTERNAL LINK FILE: ${file.filename}`);
           addLine(`URL: ${file.external_url}`);
           return;
@@ -254,6 +352,9 @@
       try {
         const file = await readFile(filename);
         if (Number(file.is_external) === 1 && file.external_url) {
+          if (openExternalByType(file, "EDIT")) {
+            return;
+          }
           addLine(`EXTERNAL PAGE FOR ${file.filename}: ${file.external_url}`);
           window.open(file.external_url, "_blank", "noopener");
           showStatus("EXTERNAL LINK OPENED IN NEW PAGE.", false);
