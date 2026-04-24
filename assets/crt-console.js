@@ -436,7 +436,7 @@ consoleInput.addEventListener("keydown", async (event) => {
 
   if (state.rawUsername === "openLogs" && value === "Logs123") {
     await typeLine(consoleOutput, "LOG DIAGNOSTICS ACCESS GRANTED", 10);
-    showStatus("LOG PANEL OPENED. DRAG HEADER TO MOVE. CLICK X TO CLOSE.", false);
+    showStatus("DIAGNOSTICS PANEL ENABLED", false);
     await openLogsPanel();
     consoleInput.value = "";
     consoleInput.type = "text";
