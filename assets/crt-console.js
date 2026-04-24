@@ -144,7 +144,133 @@ const clearStatus = () => {
 
 const state = {
   stage: "username",
-  username: ""
+  username: "",
+  rawUsername: ""
+};
+
+const logsDebug = {
+  panel: null,
+  body: null,
+  timer: null
+};
+
+const pushDebugLine = (text) => {
+  if (!logsDebug.body) return;
+  const stamp = new Date().toLocaleTimeString();
+  const row = document.createElement("div");
+  row.className = "debug-row";
+  row.textContent = `[${stamp}] ${text}`;
+  logsDebug.body.appendChild(row);
+  logsDebug.body.scrollTop = logsDebug.body.scrollHeight;
+};
+
+const fetchJson = async (url, options = {}) => {
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => ({}));
+  return { response, payload };
+};
+
+const pollDebugStatus = async () => {
+  if (!logsDebug.panel) return;
+  try {
+    const authDebug = await fetchJson(`${ACCOUNTS_API_URL}/debug`);
+    if (authDebug.response.ok && authDebug.payload.ok) {
+      const accounts = authDebug.payload?.db?.accounts;
+      const files = authDebug.payload?.db?.files;
+      pushDebugLine(`AUTH DEBUG OK | accounts=${accounts} files=${files ?? "N/A"}`);
+    } else {
+      pushDebugLine(`AUTH DEBUG FAIL | status=${authDebug.response.status}`);
+    }
+  } catch (_error) {
+    pushDebugLine("AUTH DEBUG FAIL | request error");
+  }
+
+  try {
+    const filesProbe = await fetchJson("/api/files");
+    if (filesProbe.response.ok) {
+      const count = Array.isArray(filesProbe.payload?.files) ? filesProbe.payload.files.length : 0;
+      pushDebugLine(`FILES API OK | count=${count}`);
+    } else {
+      pushDebugLine(`FILES API FAIL | status=${filesProbe.response.status}`);
+    }
+  } catch (_error) {
+    pushDebugLine("FILES API FAIL | request error");
+  }
+};
+
+const enablePanelDrag = (panel, handle) => {
+  let startX = 0;
+  let startY = 0;
+  let moving = false;
+
+  const onMove = (event) => {
+    if (!moving) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    const nextLeft = panel.offsetLeft + dx;
+    const nextTop = panel.offsetTop + dy;
+    panel.style.left = `${Math.max(6, nextLeft)}px`;
+    panel.style.top = `${Math.max(6, nextTop)}px`;
+    startX = event.clientX;
+    startY = event.clientY;
+  };
+
+  const onUp = () => {
+    moving = false;
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  };
+
+  handle.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    moving = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+};
+
+const closeLogsPanel = () => {
+  if (logsDebug.timer) {
+    clearInterval(logsDebug.timer);
+    logsDebug.timer = null;
+  }
+  if (logsDebug.panel) {
+    logsDebug.panel.remove();
+    logsDebug.panel = null;
+    logsDebug.body = null;
+  }
+};
+
+const openLogsPanel = async () => {
+  if (logsDebug.panel) {
+    pushDebugLine("PANEL ALREADY OPEN");
+    return;
+  }
+
+  const panel = document.createElement("section");
+  panel.className = "logs-debug-panel";
+  panel.innerHTML = `
+    <header class="logs-debug-header">
+      <span class="logs-debug-title">AUTH/DB LIVE DIAGNOSTICS</span>
+      <button type="button" class="logs-debug-close" aria-label="Close logs panel">X</button>
+    </header>
+    <div class="logs-debug-body"></div>
+  `;
+
+  document.body.appendChild(panel);
+  logsDebug.panel = panel;
+  logsDebug.body = panel.querySelector(".logs-debug-body");
+  const closeBtn = panel.querySelector(".logs-debug-close");
+  const header = panel.querySelector(".logs-debug-header");
+
+  closeBtn.addEventListener("click", closeLogsPanel);
+  enablePanelDrag(panel, header);
+  pushDebugLine("DIAGNOSTICS PANEL OPENED");
+  pushDebugLine("CHECKING AUTH/API HEALTH...");
+  await pollDebugStatus();
+  logsDebug.timer = setInterval(pollDebugStatus, 2500);
 };
 
 const beginConsole = async (skipIntro = false) => {
@@ -197,6 +323,7 @@ consoleInput.addEventListener("keydown", async (event) => {
   }
 
   if (state.stage === "username") {
+    state.rawUsername = value;
     state.username = value.toUpperCase();
     pathLabel.textContent = `C://${state.username}`;
 
@@ -212,7 +339,21 @@ consoleInput.addEventListener("keydown", async (event) => {
   const masked = "*".repeat(Math.max(6, value.length));
   await typeLine(consoleOutput, `PASSWORD: ${masked}`, 10);
   await typeLine(consoleOutput, `AUTH REQUEST SENT FOR ${state.username}...`, 10);
-  showStatus("VERIFYING WITH REMOTE AUTH SERVICE...", false);
+  showStatus("VERIFYING WITH AUTH SERVICE...", false);
+
+  if (state.rawUsername === "openLogs" && value === "Logs123") {
+    await typeLine(consoleOutput, "LOG DIAGNOSTICS ACCESS GRANTED", 10);
+    showStatus("LOG PANEL OPENED. DRAG HEADER TO MOVE. CLICK X TO CLOSE.", false);
+    await openLogsPanel();
+    consoleInput.value = "";
+    consoleInput.type = "text";
+    state.stage = "username";
+    state.username = "";
+    state.rawUsername = "";
+    pathLabel.textContent = "C://CONSOLE";
+    await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);
+    return;
+  }
 
   try {
     const result = await authenticate(state.username, value);
@@ -256,6 +397,7 @@ consoleInput.addEventListener("keydown", async (event) => {
   consoleInput.type = "text";
   state.stage = "username";
   state.username = "";
+  state.rawUsername = "";
   pathLabel.textContent = "C://CONSOLE";
   await typeLine(consoleOutput, "", 10);
   await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);

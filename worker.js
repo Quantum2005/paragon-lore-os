@@ -204,6 +204,12 @@ const ensureAccountsTable = async (db) => {
   `).run();
 };
 
+const sha256Hex = async (value) => {
+  const data = new TextEncoder().encode(String(value || ""));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((n) => n.toString(16).padStart(2, "0")).join("");
+};
+
 const routeAuth = async (request, env, pathname) => {
   if (!env.ars40_db) {
     return json({ ok: false, message: "D1 binding ars40_db is not configured." }, 500);
@@ -211,6 +217,20 @@ const routeAuth = async (request, env, pathname) => {
 
   await ensureAccountsTable(env.ars40_db);
   const body = await parseBody(request);
+
+  if (request.method === "GET" && pathname === "/auth/debug") {
+    const accountsCount = await env.ars40_db.prepare("SELECT COUNT(*) AS count FROM accounts").first();
+    const filesCount = await env.ars40_db.prepare("SELECT COUNT(*) AS count FROM files").first().catch(() => ({ count: null }));
+    return json({
+      ok: true,
+      service: "auth-debug",
+      timestamp: new Date().toISOString(),
+      db: {
+        accounts: Number(accountsCount?.count || 0),
+        files: filesCount?.count === null ? null : Number(filesCount?.count || 0)
+      }
+    });
+  }
 
   if (request.method === "POST" && pathname === "/auth/login") {
     const username = String(body?.username || "").trim().toUpperCase();
@@ -234,7 +254,9 @@ const routeAuth = async (request, env, pathname) => {
       return json({ ok: false, message: "Account disabled." }, 403);
     }
 
-    if (password !== String(account.password_hash || "")) {
+    const storedPassword = String(account.password_hash || "");
+    const passwordSha = await sha256Hex(password);
+    if (password !== storedPassword && passwordSha !== storedPassword) {
       return json({ ok: false, message: "Invalid credentials." }, 401);
     }
 

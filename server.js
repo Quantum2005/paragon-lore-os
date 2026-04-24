@@ -1,6 +1,7 @@
 import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +24,19 @@ const loadAccounts = async () => {
 
 const decode = (value) => Buffer.from(String(value || ""), "base64").toString("utf8");
 const encode = (value) => Buffer.from(String(value || ""), "utf8").toString("base64");
+const sha256Hex = (value) => createHash("sha256").update(String(value || "")).digest("hex");
+
+app.get("/auth/debug", async (_req, res) => {
+  const { list } = await loadAccounts();
+  res.json({
+    ok: true,
+    service: "auth-debug",
+    timestamp: new Date().toISOString(),
+    db: {
+      accounts: list.length
+    }
+  });
+});
 
 app.post("/auth/login", async (req, res) => {
   const username = normalizeUsername(req.body?.username);
@@ -44,7 +58,8 @@ app.post("/auth/login", async (req, res) => {
     return;
   }
 
-  if (decode(account.password_b64) !== password) {
+  const decoded = decode(account.password_b64);
+  if (decoded !== password && decoded !== sha256Hex(password)) {
     res.status(401).json({ ok: false, message: "Invalid credentials." });
     return;
   }
