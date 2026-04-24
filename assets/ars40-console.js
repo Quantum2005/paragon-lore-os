@@ -8,8 +8,10 @@
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
+    const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";
+    let activeBackendBase = "";
     const API_ERROR_MEANINGS = {
       E_BINDING_MISSING: "Database binding missing in runtime.",
       E_INVALID_FILENAME: "Filename is invalid. Allowed: a-z A-Z 0-9 . _ -",
@@ -30,6 +32,29 @@
     pathLabel.textContent = `ARS40://${user}`;
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const backendCandidates = () => {
+      const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
+        .map((value) => String(value || "").replace(/\/+$/, ""))
+        .filter((value, index, arr) => arr.indexOf(value) === index);
+      return list;
+    };
+
+    const fetchWithBackendFallback = async (path, options = {}) => {
+      let lastResponse = null;
+      for (const base of backendCandidates()) {
+        const response = await fetch(`${base}${path}`, options).catch(() => null);
+        if (!response) continue;
+        lastResponse = response;
+        if (response.status !== 404 && response.status !== 405) {
+          activeBackendBase = base;
+          return response;
+        }
+      }
+
+      if (lastResponse) return lastResponse;
+      throw new Error(`No reachable backend for ${path}`);
+    };
 
     const addLine = (text) => {
       const line = document.createElement("div");
@@ -131,7 +156,7 @@
         ...(options.headers || {})
       };
 
-      const response = await fetch(`${FILES_API_URL}${path}`, {
+      const response = await fetchWithBackendFallback(`${FILES_API_URL}${path}`, {
         ...options,
         headers
       });
@@ -145,6 +170,19 @@
         payload = { code: "E_API_UNAVAILABLE", message: raw ? `Unexpected response: ${raw.slice(0, 120)}` : "API unavailable." };
       }
 
+      if (!response.ok || payload.ok === false) {
+        throw createApiError(payload, response.status);
+      }
+      return payload;
+    };
+
+    const callAuthApi = async (path, body) => {
+      const response = await fetchWithBackendFallback(`${ACCOUNTS_API_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
         throw createApiError(payload, response.status);
       }
@@ -442,19 +480,10 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`REGISTRATION FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/register", { username, password });
         addLine(`ACCOUNT REGISTERED: ${username} (ROLE=STANDARD)`);
-      } catch (_error) {
-        showStatus("REGISTRATION FAILED: REGISTRY WRITE ERROR", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "REGISTRATION FAILED"), true);
       }
     };
 
@@ -473,19 +502,10 @@
       }
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-username`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, username: nextUsername })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`SETUSER FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/admin/update-username", { id, username: nextUsername });
         addLine(`ACCOUNT UPDATED: ID ${id} USERNAME -> ${nextUsername}`);
-      } catch (_error) {
-        showStatus("SETUSER FAILED: AUTH API UNAVAILABLE", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "SETUSER FAILED"), true);
       }
     };
 
@@ -506,19 +526,10 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-password`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, password: nextPassword })
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          showStatus(`SETPASS FAILED: ${(payload.message || "API ERROR").toUpperCase()}`, true);
-          return;
-        }
+        await callAuthApi("/admin/update-password", { id, password: nextPassword });
         addLine(`ACCOUNT UPDATED: ID ${id} PASSWORD CHANGED`);
-      } catch (_error) {
-        showStatus("SETPASS FAILED: AUTH API UNAVAILABLE", true);
+      } catch (error) {
+        showStatus(formatApiError(error, "SETPASS FAILED"), true);
       }
     };
 
