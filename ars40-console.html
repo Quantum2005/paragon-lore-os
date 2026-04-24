@@ -19,6 +19,30 @@
     .poweroff-fade.show {
       opacity: 1;
     }
+
+    .media-link {
+      color: var(--fg);
+      text-decoration: underline;
+      word-break: break-all;
+    }
+
+    .media-preview {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      border: 1px solid rgba(137, 255, 159, 0.35);
+      padding: 0.35rem;
+      background: rgba(0, 0, 0, 0.42);
+      max-width: min(620px, 100%);
+    }
+
+    .media-preview img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      filter: grayscale(100%) contrast(1.1);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -49,7 +73,24 @@
 
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
-    const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+    const EDITOR_URL = "./editor.html";
+    const AUTH_API_DEFAULT = "https://api-worker.logicalsystems-yt.workers.dev";
+    const AUTH_API_OVERRIDE = new URLSearchParams(window.location.search).get("authApi");
+    const AUTH_API_BASES = [AUTH_API_OVERRIDE, window.location.origin, AUTH_API_DEFAULT]
+      .map((entry) => String(entry || "").trim().replace(/\/+$/, ""))
+      .filter(Boolean);
+    const FILES_API_URL = "/api";
+    const API_ERROR_MEANINGS = {
+      E_BINDING_MISSING: "Database binding missing in runtime.",
+      E_INVALID_FILENAME: "Filename is invalid. Allowed: a-z A-Z 0-9 . _ -",
+      E_FILE_NOT_FOUND: "Requested file does not exist.",
+      E_FILE_EXISTS: "A file with this name already exists.",
+      E_INVALID_EXTERNAL_URL: "External link URL is invalid.",
+      E_EXTERNAL_READONLY: "External link records cannot be edited as local text.",
+      E_BAD_JSON: "Backend received malformed JSON payload.",
+      E_UNSUPPORTED_ROUTE: "Unsupported API route/method.",
+      E_API_UNAVAILABLE: "API endpoint unavailable or returned non-JSON."
+    };
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 
@@ -67,6 +108,40 @@
       output.appendChild(line);
       output.scrollTop = output.scrollHeight;
       return line;
+    };
+
+    const addMediaPreview = (label, imageUrl, sourceUrl) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "line";
+
+      const container = document.createElement("div");
+      container.className = "media-preview";
+
+      const caption = document.createElement("div");
+      caption.textContent = label;
+
+      const link = document.createElement("a");
+      link.href = sourceUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "media-link";
+      link.textContent = sourceUrl;
+
+      const image = document.createElement("img");
+      image.src = imageUrl;
+      image.alt = label;
+      image.loading = "lazy";
+      image.addEventListener("click", () => {
+        window.open(sourceUrl, "_blank", "noopener");
+      });
+      image.addEventListener("error", () => {
+        addLine("IMAGE PREVIEW FAILED. OPENING SOURCE URL RECOMMENDED.");
+      });
+
+      container.append(caption, image, link);
+      wrapper.appendChild(container);
+      output.appendChild(wrapper);
+      output.scrollTop = output.scrollHeight;
     };
 
     const typeLine = (text, speed = 12) => new Promise((resolve) => {
@@ -100,18 +175,12 @@
 
     const logo = [
 "   _____ __________       __________  __  ___   ______  ___  ______________  _   __     ",
-"  / ___// ____/ __ \     / ____/ __ \/ / / / | / / __ \/   |/_  __/  _/ __ \/ | / /     ",
-"  \__ \/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
+"  / ___// ____/ __ \\     / ____/ __ \\/ / / / | / / __ \\/   |/_  __/  _/ __ \\/ | / /     ",
+"  \\__ \\/ /   / /_/ /    / /_  / / / / / / /  |/ / / / / /| | / /  / // / / /  |/ /      ",
 " ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
-"/____/\____/_/        /_/    \____/\____/_/ |_/_____/_/  |_/_/ /___/\____/_/ |_/        ",
+"/____/\\____/_/        /_/    \\____/\\____/_/ |_/_____/_/  |_/_/ /___/\\____/_/ |_/        ",
                                                                                    
 "                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
-    ];
-
-    const placeholders = [
-      "type <filename> - placeholder: view file contents",
-      "more <filename> - placeholder: paginated output",
-      "edit <filename> - placeholder: launch text editor"
     ];
 
     const printHelp = () => {
@@ -120,7 +189,13 @@
       addLine("  clear  - Clear visible console history.");
       addLine("  logout - Log out of your account.");
       addLine("  exit   - Exit the Console and power off the machine.");
-      placeholders.forEach((entry) => addLine(`  ${entry}`));
+      addLine("  files               - List files stored in D1.");
+      addLine("  type <filename>     - Display full file contents.");
+      addLine("  more <filename>     - Display first 25 lines.");
+      addLine("  edit <filename>     - Open integrated text editor.");
+      addLine("  create <filename>                    - Create local text file.");
+      addLine("  create <filename> --link <url>       - Create external link file.");
+      addLine("  errors              - List API error codes and meanings.");
       if (activeRole === "administrator") {
         addLine("  goto <url> - Navigate to a specified URL (administrator only).");
         addLine("  register <user> <pass> - Create registry account (administrator only).");
@@ -130,6 +205,230 @@
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
       addLine("REGISTER NOTE: New accounts are created immediately via remote API.");
+    };
+
+    const fetchAuthApi = async (path, init) => {
+      let lastError;
+      for (const base of AUTH_API_BASES) {
+        try {
+          const response = await fetch(`${base}${path}`, init);
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            lastError = new Error(`AUTH API NON-JSON RESPONSE FROM ${base}${path}`);
+            continue;
+          }
+          return response;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error("AUTH API UNAVAILABLE");
+    };
+
+    const printErrorCodes = () => {
+      addLine("API ERROR CODES:");
+      Object.entries(API_ERROR_MEANINGS).forEach(([code, meaning]) => {
+        addLine(`  ${code} - ${meaning}`);
+      });
+    };
+
+    const createApiError = (payload, status) => {
+      const error = new Error(payload?.message || `HTTP ${status}`);
+      error.code = payload?.code || "E_API_UNAVAILABLE";
+      error.status = status;
+      return error;
+    };
+
+    const extFromValue = (value) => {
+      const target = String(value || "").split("?")[0].split("#")[0];
+      const idx = target.lastIndexOf(".");
+      if (idx < 0) return "";
+      return target.slice(idx + 1).toLowerCase();
+    };
+
+    const classifyExternal = (filename, externalUrl) => {
+      const ext = extFromValue(filename) || extFromValue(externalUrl);
+      const videoExt = new Set(["mp4", "mpeg", "mpg", "mov", "m4v", "webm", "avi", "vid"]);
+      const imageExt = new Set(["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"]);
+      const textExt = new Set(["txt", "md", "log", "csv", "json", "xml"]);
+
+      if (videoExt.has(ext)) return { kind: "video", ext };
+      if (imageExt.has(ext)) return { kind: "image", ext };
+      if (textExt.has(ext)) return { kind: "text", ext };
+      return { kind: "external", ext };
+    };
+
+    const resolveImagePreviewUrl = (externalUrl) => {
+      try {
+        const parsed = new URL(externalUrl);
+        if (parsed.hostname.endsWith("gyazo.com")) {
+          const id = parsed.pathname.replace(/^\/+/, "").split("/")[0];
+          if (id) return `https://i.gyazo.com/${id}.png`;
+        }
+      } catch (_error) {
+        return externalUrl;
+      }
+      return externalUrl;
+    };
+
+    const formatApiError = (error, fallbackPrefix = "API ERROR") => {
+      const code = String(error?.code || "E_API_UNAVAILABLE").toUpperCase();
+      const meaning = API_ERROR_MEANINGS[code] || "Unexpected API failure.";
+      const detail = String(error?.message || meaning).toUpperCase();
+      return `${fallbackPrefix} [${code}] ${detail} - ${meaning.toUpperCase()}`;
+    };
+
+    const callApi = async (path, options = {}) => {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-ars40-user": String(user).toUpperCase(),
+        ...(options.headers || {})
+      };
+
+      const response = await fetch(`${FILES_API_URL}${path}`, {
+        ...options,
+        headers
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      let payload = {};
+      if (contentType.includes("application/json")) {
+        payload = await response.json().catch(() => ({}));
+      } else {
+        const raw = await response.text().catch(() => "");
+        payload = { code: "E_API_UNAVAILABLE", message: raw ? `Unexpected response: ${raw.slice(0, 120)}` : "API unavailable." };
+      }
+
+      if (!response.ok || payload.ok === false) {
+        throw createApiError(payload, response.status);
+      }
+      return payload;
+    };
+
+    const readFile = async (filename) => {
+      const payload = await callApi(`/file?name=${encodeURIComponent(filename)}`, { method: "GET" });
+      return payload.file;
+    };
+
+    const listFiles = async () => {
+      try {
+        const payload = await callApi("/files", { method: "GET" });
+        if (!payload.files?.length) {
+          addLine("NO FILES IN REGISTRY.");
+          return;
+        }
+
+        addLine("D1 FILE REGISTRY:");
+        payload.files.forEach((entry) => {
+          const kind = Number(entry.is_external) === 1 ? "LINK" : "TEXT";
+          addLine(`  ${entry.filename} [${kind}] UPDATED ${entry.updated_at}`);
+        });
+      } catch (error) {
+        showStatus(formatApiError(error, "FILES ERROR"), true);
+      }
+    };
+
+    const runTypeCommand = async (filename, paginate = false) => {
+      if (!filename) {
+        showStatus(`USAGE: ${paginate ? "more" : "type"} <filename>`, true);
+        return;
+      }
+
+      try {
+        const file = await readFile(filename);
+        if (Number(file.is_external) === 1) {
+          const externalUrl = String(file.external_url || "");
+          const classification = classifyExternal(file.filename, externalUrl);
+
+          if (classification.kind === "image") {
+            addMediaPreview(`IMAGE PREVIEW (${file.filename})`, resolveImagePreviewUrl(externalUrl), externalUrl);
+            addLine("CLICK THE IMAGE OR LINK TO OPEN THE ORIGINAL SOURCE.");
+            return;
+          }
+
+          addLine(`EXTERNAL LINK FILE: ${file.filename}`);
+          addLine(`OPENING ${classification.kind.toUpperCase()} TARGET IN NEW WINDOW...`);
+          window.open(externalUrl, "_blank", "noopener");
+          return;
+        }
+
+        const lines = String(file.content || "").split(/\r?\n/);
+        const chunk = paginate ? lines.slice(0, 25) : lines;
+
+        addLine(`--- ${file.filename} ---`);
+        if (!chunk.length || (chunk.length === 1 && chunk[0] === "")) {
+          addLine("[EMPTY FILE]");
+        } else {
+          chunk.forEach((line) => addLine(line));
+        }
+
+        if (paginate && lines.length > 25) {
+          addLine(`[TRUNCATED] ${lines.length - 25} MORE LINE(S) AVAILABLE. USE TYPE.`);
+        }
+        addLine("--- EOF ---");
+      } catch (error) {
+        showStatus(formatApiError(error, "READ ERROR"), true);
+      }
+    };
+
+    const runEditCommand = async (filename) => {
+      if (!filename) {
+        showStatus("USAGE: edit <filename>", true);
+        return;
+      }
+
+      try {
+        const file = await readFile(filename);
+        if (Number(file.is_external) === 1 && file.external_url) {
+          addLine(`EXTERNAL PAGE FOR ${file.filename}: ${file.external_url}`);
+          window.open(file.external_url, "_blank", "noopener");
+          showStatus("EXTERNAL LINK OPENED IN NEW PAGE.", false);
+          return;
+        }
+
+        window.location.href = `${EDITOR_URL}?file=${encodeURIComponent(filename)}`;
+      } catch (error) {
+        showStatus(formatApiError(error, "EDIT ERROR"), true);
+      }
+    };
+
+    const runCreateCommand = async (args) => {
+      const filename = (args[0] || "").trim();
+      if (!filename) {
+        showStatus("USAGE: create <filename> [--link <url>]", true);
+        return;
+      }
+
+      const linkFlagIndex = args.findIndex((entry) => entry === "--link");
+      const externalUrl = linkFlagIndex >= 0 ? args.slice(linkFlagIndex + 1).join(" ").trim() : "";
+      const mode = externalUrl ? "external" : "local";
+
+      if (linkFlagIndex >= 0 && !externalUrl) {
+        showStatus("USAGE: create <filename> --link <url>", true);
+        return;
+      }
+
+      try {
+        await callApi("/file", {
+          method: "POST",
+          body: JSON.stringify({
+            filename,
+            mode,
+            externalUrl,
+            content: mode === "local" ? `# ${filename}\n` : ""
+          })
+        });
+
+        if (mode === "external") {
+          addLine(`EXTERNAL LINK FILE CREATED: ${filename}`);
+          addLine(`TARGET URL: ${externalUrl}`);
+        } else {
+          addLine(`LOCAL TEXT FILE CREATED: ${filename}`);
+          addLine("TIP: RUN 'edit <filename>' TO MODIFY CONTENT.");
+        }
+      } catch (error) {
+        showStatus(formatApiError(error, "CREATE ERROR"), true);
+      }
     };
 
     const bootHiddenRedirect = async () => {
@@ -184,8 +483,33 @@
         return;
       }
 
-      if (["type", "more", "edit"].includes(cmd)) {
-        addLine("PLACEHOLDER COMMAND ONLY. FEATURE TO BE IMPLEMENTED.");
+      if (cmd === "files") {
+        void listFiles();
+        return;
+      }
+
+      if (cmd === "type") {
+        void runTypeCommand(args.join(" ").trim(), false);
+        return;
+      }
+
+      if (cmd === "more") {
+        void runTypeCommand(args.join(" ").trim(), true);
+        return;
+      }
+
+      if (cmd === "edit") {
+        void runEditCommand(args.join(" ").trim());
+        return;
+      }
+
+      if (cmd === "create") {
+        void runCreateCommand(args);
+        return;
+      }
+
+      if (cmd === "errors") {
+        printErrorCodes();
         return;
       }
 
@@ -282,7 +606,7 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/register`, {
+        const response = await fetchAuthApi("/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password })
@@ -313,7 +637,7 @@
       }
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-username`, {
+        const response = await fetchAuthApi("/admin/update-username", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, username: nextUsername })
@@ -346,7 +670,7 @@
       addLine("SECURITY NOTICE: Do not reuse passwords from real accounts.");
 
       try {
-        const response = await fetch(`${ACCOUNTS_API_URL}/admin/update-password`, {
+        const response = await fetchAuthApi("/admin/update-password", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, password: nextPassword })

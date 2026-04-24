@@ -34,8 +34,12 @@
     const consoleInput = document.getElementById("consoleInput");
     const status = document.getElementById("status");
 
-    // Remote account API.
-    const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+    // Remote account API candidates (primary + optional overrides).
+    const AUTH_API_DEFAULT = "https://api-worker.logicalsystems-yt.workers.dev";
+    const AUTH_API_OVERRIDE = new URLSearchParams(window.location.search).get("authApi");
+    const AUTH_API_BASES = [AUTH_API_OVERRIDE, window.location.origin, AUTH_API_DEFAULT]
+      .map((entry) => String(entry || "").trim().replace(/\/+$/, ""))
+      .filter(Boolean);
     // Next page to open on successful login (GitHub Pages-friendly relative path).
     const NEXT_FILE_URL = "./ars40-console.html";
 
@@ -63,8 +67,26 @@
 
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    const fetchAuthApi = async (path, init) => {
+      let lastError;
+      for (const base of AUTH_API_BASES) {
+        try {
+          const response = await fetch(`${base}${path}`, init);
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            lastError = new Error(`AUTH API NON-JSON RESPONSE FROM ${base}${path}`);
+            continue;
+          }
+          return response;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error("AUTH API UNAVAILABLE");
+    };
+
     const authenticate = async (username, password) => {
-      const response = await fetch(`${ACCOUNTS_API_URL}/login`, {
+      const response = await fetchAuthApi("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
@@ -81,6 +103,10 @@
         }
 
         return { ok: false, code: "AUTH_FAILED", message: payload.message || "Authentication failed." };
+      }
+
+      if (payload.ok !== true && payload.guest !== true && !payload.role) {
+        return { ok: false, code: "AUTH_FAILED", message: "Authentication response was invalid." };
       }
 
       if (payload.guest) {
