@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Link Viewer</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #020a04;
+      color: #8bff9f;
+      font-family: "Courier New", Courier, monospace;
+    }
+
+    .hint {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      font-size: 12px;
+      opacity: 0.86;
+      z-index: 2;
+    }
+
+    .wrap {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    img {
+      max-width: min(92vw, 980px);
+      max-height: min(88vh, 760px);
+      image-rendering: pixelated;
+      filter: grayscale(1) sepia(1) hue-rotate(50deg) saturate(2.1) contrast(1.05);
+      cursor: pointer;
+      border: 1px solid rgba(139, 255, 159, 0.35);
+      box-shadow: 0 0 0 1px rgba(139, 255, 159, 0.18), 0 0 18px rgba(70, 255, 130, 0.2);
+    }
+
+    .error {
+      position: fixed;
+      bottom: 8px;
+      left: 8px;
+      color: #ff9696;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">IMAGE LINK VIEWER — click image to open source page</div>
+  <div class="wrap">
+    <img id="linkedImage" alt="External image preview" />
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const srcUrl = String(params.get("img") || "");
+    const targetUrl = String(params.get("target") || srcUrl);
+    const imageName = String(params.get("name") || "IMAGE");
+    const image = document.getElementById("linkedImage");
+
+    document.title = imageName;
+    image.alt = imageName;
+    image.src = srcUrl;
+
+    image.addEventListener("click", () => {
+      window.location.href = targetUrl;
+    });
+
+    image.addEventListener("error", () => {
+      const error = document.createElement("div");
+      error.className = "error";
+      error.textContent = "FAILED TO LOAD IMAGE SOURCE";
+      document.body.appendChild(error);
+    });
+  </script>
+</body>
+</html>
