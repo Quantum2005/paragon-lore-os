@@ -20,6 +20,7 @@
       E_FILE_EXISTS: "A file with this name already exists.",
       E_INVALID_EXTERNAL_URL: "External link URL is invalid.",
       E_EXTERNAL_READONLY: "External link records cannot be edited as local text.",
+      E_FILE_LOCKED: "File is locked and requires password.",
       E_BAD_JSON: "Backend received malformed JSON payload.",
       E_UNSUPPORTED_ROUTE: "Unsupported API route/method.",
       E_API_UNAVAILABLE: "API endpoint unavailable or returned non-JSON."
@@ -128,7 +129,7 @@
         addLine("  setuser <id> <user> - Change username by DB id (administrator/manager).");
         addLine("  setpass <id> <pass> - Change password by DB id (administrator/manager).");
       }
-      if (activeRole === "administrator" || activeRole === "manager") {
+      if (activeRole === "administrator" || activeRole === "manager" || activeRole === "editor") {
         addLine("  elevate <id> <role> - Promote a user one level below your role.");
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
@@ -197,9 +198,21 @@
       return payload;
     };
 
-    const readFile = async (filename) => {
-      const payload = await callApi(`/file?name=${encodeURIComponent(filename)}`, { method: "GET" });
+    const readFile = async (filename, password = "") => {
+      const suffix = password ? `&password=${encodeURIComponent(password)}` : "";
+      const payload = await callApi(`/file?name=${encodeURIComponent(filename)}${suffix}`, { method: "GET" });
       return payload.file;
+    };
+
+    const readFileWithUnlock = async (filename) => {
+      try {
+        return await readFile(filename);
+      } catch (error) {
+        if (String(error?.code || "").toUpperCase() !== "E_FILE_LOCKED") throw error;
+        const password = window.prompt(`FILE "${filename}" IS LOCKED. ENTER PASSWORD:`) || "";
+        if (!password) throw error;
+        return readFile(filename, password);
+      }
     };
 
     const extensionFromPath = (value) => {
@@ -280,7 +293,7 @@
       }
 
       try {
-        const file = await readFile(filename);
+        const file = await readFileWithUnlock(filename);
         if (Number(file.is_external) === 1) {
           if (openExternalByType(file, paginate ? "MORE" : "TYPE")) {
             return;
@@ -316,7 +329,7 @@
       }
 
       try {
-        const file = await readFile(filename);
+        const file = await readFileWithUnlock(filename);
         if (Number(file.is_external) === 1 && file.external_url) {
           if (openExternalByType(file, "EDIT")) {
             return;
@@ -340,7 +353,7 @@
       }
 
       try {
-        const file = await readFile(filename);
+        const file = await readFileWithUnlock(filename);
         if (Number(file.is_external) === 1 && file.external_url) {
           if (openExternalByType(file, "TOUCH")) {
             return;
@@ -366,11 +379,21 @@
 
       const linkFlagIndex = args.findIndex((entry) => entry === "--link");
       const externalUrl = linkFlagIndex >= 0 ? args.slice(linkFlagIndex + 1).join(" ").trim() : "";
+      const lockEnabled = args.includes("--lock");
       const mode = externalUrl ? "external" : "local";
 
       if (linkFlagIndex >= 0 && !externalUrl) {
         showStatus("USAGE: create <filename> --link <url>", true);
         return;
+      }
+
+      let lockPassword = "";
+      if (lockEnabled) {
+        lockPassword = String(window.prompt(`SET LOCK PASSWORD FOR ${filename.toUpperCase()}:`) || "");
+        if (!lockPassword) {
+          showStatus("LOCK ENABLED BUT PASSWORD NOT PROVIDED.", true);
+          return;
+        }
       }
 
       try {
@@ -379,6 +402,8 @@
           body: JSON.stringify({
             filename,
             mode,
+            lock: lockEnabled,
+            lockPassword,
             externalUrl,
             content: mode === "local" ? `# ${filename}\n` : ""
           })
@@ -532,8 +557,8 @@
       }
 
       if (cmd === "elevate") {
-        if (activeRole !== "administrator" && activeRole !== "manager") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR OR MANAGER ONLY", true);
+        if (activeRole !== "administrator" && activeRole !== "manager" && activeRole !== "editor") {
+          showStatus("PERMISSION DENIED: EDITOR, ADMINISTRATOR OR MANAGER ONLY", true);
           return;
         }
 
@@ -648,9 +673,13 @@
         return;
       }
 
-      const allowedTarget = activeRole === "manager" ? "administrator" : "editor";
-      if (targetRole !== allowedTarget) {
-        showStatus(`ACCESS RULE: ${activeRole.toUpperCase()} MAY ONLY ELEVATE TO ${allowedTarget.toUpperCase()}`, true);
+      const allowedTargets = activeRole === "manager"
+        ? ["administrator", "editor", "standard"]
+        : activeRole === "administrator"
+          ? ["editor", "standard"]
+          : ["standard"];
+      if (!allowedTargets.includes(targetRole)) {
+        showStatus(`ACCESS RULE: ${activeRole.toUpperCase()} MAY ONLY ELEVATE TO ${allowedTargets.join("/").toUpperCase()}`, true);
         return;
       }
 

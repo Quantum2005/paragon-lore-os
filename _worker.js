@@ -22,12 +22,16 @@ const ensureFileTable = async (db) => {
       content TEXT NOT NULL DEFAULT '',
       is_external INTEGER NOT NULL DEFAULT 0,
       external_url TEXT,
+      is_locked INTEGER NOT NULL DEFAULT 0,
+      lock_password TEXT,
       created_by TEXT NOT NULL DEFAULT 'SYSTEM',
       updated_by TEXT NOT NULL DEFAULT 'SYSTEM',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+  await db.prepare("ALTER TABLE files ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0").run().catch(() => {});
+  await db.prepare("ALTER TABLE files ADD COLUMN lock_password TEXT").run().catch(() => {});
 };
 
 const normalizeFilename = (value) => String(value || "").trim();
@@ -67,7 +71,7 @@ const routeApi = async (request, env, pathname) => {
 
   if (request.method === "GET" && pathname === "/api/files") {
     const rows = await env.ars40_db.prepare(`
-      SELECT filename, is_external, external_url, updated_at
+      SELECT filename, is_external, external_url, is_locked, updated_at
       FROM files
       ORDER BY filename COLLATE NOCASE ASC
     `).all();
@@ -78,13 +82,14 @@ const routeApi = async (request, env, pathname) => {
   if (request.method === "GET" && pathname === "/api/file") {
     const url = new URL(request.url);
     const filename = normalizeFilename(url.searchParams.get("name"));
+    const filePassword = String(url.searchParams.get("password") || "");
 
     if (!validateFilename(filename)) {
       return json({ ok: false, message: "Invalid filename." }, 400);
     }
 
     const record = await env.ars40_db.prepare(`
-      SELECT filename, content, is_external, external_url, updated_at, updated_by
+      SELECT filename, content, is_external, external_url, is_locked, lock_password, updated_at, updated_by
       FROM files
       WHERE filename = ?1
       LIMIT 1
@@ -93,8 +98,11 @@ const routeApi = async (request, env, pathname) => {
     if (!record) {
       return json({ ok: false, message: "File not found." }, 404);
     }
-
-    return json({ ok: true, file: record });
+    if (Number(record.is_locked) === 1 && filePassword !== String(record.lock_password || "")) {
+      return json({ ok: false, code: "E_FILE_LOCKED", message: "File is locked and requires password." }, 403);
+    }
+    const { lock_password, ...safeRecord } = record;
+    return json({ ok: true, file: safeRecord });
   }
 
   if (request.method === "POST" && pathname === "/api/file") {
@@ -102,6 +110,9 @@ const routeApi = async (request, env, pathname) => {
     const filename = normalizeFilename(body.filename);
     const actor = getActor(request);
     const mode = String(body.mode || "local").toLowerCase();
+    const lockEnabled = Boolean(body.lock);
+    const lockPassword = String(body.lockPassword || "");
+    if (lockEnabled && !lockPassword) return json({ ok: false, message: "Lock password required when lock is enabled." }, 400);
 
     if (!validateFilename(filename)) {
       return json({ ok: false, message: "Filename must be 1-80 chars: a-z, A-Z, 0-9, dot, dash, underscore." }, 400);
@@ -119,20 +130,20 @@ const routeApi = async (request, env, pathname) => {
       }
 
       await env.ars40_db.prepare(`
-        INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
-        VALUES (?1, '', 1, ?2, ?3, ?3)
-      `).bind(filename, externalUrl, actor).run();
+        INSERT INTO files (filename, content, is_external, external_url, is_locked, lock_password, created_by, updated_by)
+        VALUES (?1, '', 1, ?2, ?3, ?4, ?5, ?5)
+      `).bind(filename, externalUrl, lockEnabled ? 1 : 0, lockEnabled ? lockPassword : null, actor).run();
 
-      return json({ ok: true, message: `External link ${filename} created.`, file: { filename, is_external: 1, external_url: externalUrl } });
+      return json({ ok: true, message: `External link ${filename} created.`, file: { filename, is_external: 1, external_url: externalUrl, is_locked: lockEnabled ? 1 : 0 } });
     }
 
     const content = String(body.content || "");
     await env.ars40_db.prepare(`
-      INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
-      VALUES (?1, ?2, 0, NULL, ?3, ?3)
-    `).bind(filename, content, actor).run();
+      INSERT INTO files (filename, content, is_external, external_url, is_locked, lock_password, created_by, updated_by)
+      VALUES (?1, ?2, 0, NULL, ?3, ?4, ?5, ?5)
+    `).bind(filename, content, lockEnabled ? 1 : 0, lockEnabled ? lockPassword : null, actor).run();
 
-    return json({ ok: true, message: `File ${filename} created.`, file: { filename, is_external: 0, external_url: null } });
+    return json({ ok: true, message: `File ${filename} created.`, file: { filename, is_external: 0, external_url: null, is_locked: lockEnabled ? 1 : 0 } });
   }
 
   if (request.method === "PUT" && pathname === "/api/file") {
@@ -144,7 +155,7 @@ const routeApi = async (request, env, pathname) => {
     }
 
     const existing = await env.ars40_db.prepare(`
-      SELECT filename, is_external
+      SELECT filename, is_external, is_locked, lock_password
       FROM files
       WHERE filename = ?1
       LIMIT 1
@@ -156,6 +167,12 @@ const routeApi = async (request, env, pathname) => {
 
     if (Number(existing.is_external) === 1) {
       return json({ ok: false, message: "External links cannot be edited locally." }, 409);
+    }
+    if (Number(existing.is_locked) === 1) {
+      const suppliedPassword = String(body.lockPassword || "");
+      if (suppliedPassword !== String(existing.lock_password || "")) {
+        return json({ ok: false, code: "E_FILE_LOCKED", message: "File is locked and requires password." }, 403);
+      }
     }
 
     const content = String(body.content || "");
@@ -290,10 +307,16 @@ const routeAuth = async (request, env, pathname) => {
     const id = Number(body?.id);
     const requestedRole = String(body?.role || "").trim().toLowerCase();
     const actorRole = String(request.headers.get("x-ars40-role") || "standard").trim().toLowerCase();
-    const allowedRole = actorRole === "manager" ? "administrator" : actorRole === "administrator" ? "editor" : "";
-    if (!allowedRole) return json({ ok: false, message: "Insufficient role for elevate." }, 403);
-    if (!Number.isInteger(id) || id <= 0 || requestedRole !== allowedRole) {
-      return json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRole}.` }, 400);
+    const allowedRoles = actorRole === "manager"
+      ? ["administrator", "editor", "standard"]
+      : actorRole === "administrator"
+        ? ["editor", "standard"]
+        : actorRole === "editor"
+          ? ["standard"]
+          : [];
+    if (!allowedRoles.length) return json({ ok: false, message: "Insufficient role for elevate." }, 403);
+    if (!Number.isInteger(id) || id <= 0 || !allowedRoles.includes(requestedRole)) {
+      return json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRoles.join(", ")}.` }, 400);
     }
 
     const result = await env.ars40_db.prepare(`

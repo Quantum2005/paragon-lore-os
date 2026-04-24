@@ -89,6 +89,18 @@ const fetchFile = async () => {
     const response = await fetchWithBackendFallback(`/api/file?name=${encodeURIComponent(filename)}`);
     const payload = await parsePayload(response);
     if (!response.ok || payload.ok === false) {
+      if (String(payload.code || "").toUpperCase() === "E_FILE_LOCKED") {
+        const password = window.prompt(`FILE "${filename}" IS LOCKED. ENTER PASSWORD:`) || "";
+        if (password) {
+          const retry = await fetchWithBackendFallback(`/api/file?name=${encodeURIComponent(filename)}&password=${encodeURIComponent(password)}`);
+          const retryPayload = await parsePayload(retry);
+          if (retry.ok && retryPayload.ok !== false) {
+            viewer.value = String(retryPayload.file?.content || "");
+            showStatus("READ-ONLY VIEW READY (UNLOCKED). PRESS ESC TO RETURN.", false);
+            return;
+          }
+        }
+      }
       showStatus(formatApiError(createApiError(payload, response.status), "TOUCH LOAD FAILED"), true);
       viewer.disabled = true;
       return;

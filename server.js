@@ -150,14 +150,20 @@ app.post("/auth/admin/elevate", async (req, res) => {
   const id = Number(req.body?.id);
   const requestedRole = String(req.body?.role || "").trim().toLowerCase();
   const actorRole = String(req.headers["x-ars40-role"] || "standard").trim().toLowerCase();
-  const allowedRole = actorRole === "manager" ? "administrator" : actorRole === "administrator" ? "editor" : "";
+  const allowedRoles = actorRole === "manager"
+    ? ["administrator", "editor", "standard"]
+    : actorRole === "administrator"
+      ? ["editor", "standard"]
+      : actorRole === "editor"
+        ? ["standard"]
+        : [];
 
-  if (!allowedRole) {
+  if (!allowedRoles.length) {
     res.status(403).json({ ok: false, message: "Insufficient role for elevate." });
     return;
   }
-  if (!Number.isInteger(id) || id <= 0 || requestedRole !== allowedRole) {
-    res.status(400).json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRole}.` });
+  if (!Number.isInteger(id) || id <= 0 || !allowedRoles.includes(requestedRole)) {
+    res.status(400).json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRoles.join(", ")}.` });
     return;
   }
 

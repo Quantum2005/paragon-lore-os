@@ -91,6 +91,20 @@ const fetchFile = async () => {
     const response = await fetchWithBackendFallback(`/api/file?name=${encodeURIComponent(filename)}`);
     const payload = await parsePayload(response);
     if (!response.ok || payload.ok === false) {
+      if (String(payload.code || "").toUpperCase() === "E_FILE_LOCKED") {
+        const password = window.prompt(`FILE "${filename}" IS LOCKED. ENTER PASSWORD:`) || "";
+        if (password) {
+          const retry = await fetchWithBackendFallback(`/api/file?name=${encodeURIComponent(filename)}&password=${encodeURIComponent(password)}`);
+          const retryPayload = await parsePayload(retry);
+          if (retry.ok && retryPayload.ok !== false) {
+            editor.value = String(retryPayload.file?.content || "");
+            showStatus("FILE READY (UNLOCKED). READ/EDIT ENABLED.", false);
+            editor.dataset.lockPassword = password;
+            editor.focus();
+            return;
+          }
+        }
+      }
       showStatus(formatApiError(createApiError(payload, response.status), "FILE LOAD FAILED"), true);
       editor.disabled = true;
       saveBtn.disabled = true;
@@ -124,7 +138,7 @@ const save = async () => {
         "Content-Type": "application/json",
         "x-ars40-user": user
       },
-      body: JSON.stringify({ filename, content: editor.value })
+      body: JSON.stringify({ filename, content: editor.value, lockPassword: editor.dataset.lockPassword || "" })
     });
 
     const payload = await parsePayload(response);
