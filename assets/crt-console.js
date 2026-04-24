@@ -1,0 +1,264 @@
+const bootOutput = document.getElementById("bootOutput");
+const consoleOutput = document.getElementById("consoleOutput");
+const promptRow = document.getElementById("promptRow");
+const pathLabel = document.getElementById("pathLabel");
+const consoleInput = document.getElementById("consoleInput");
+const status = document.getElementById("status");
+
+// Remote account API.
+const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+// Next page to open on successful login (GitHub Pages-friendly relative path).
+const NEXT_FILE_URL = "./ars40-console.html";
+
+const bootLines = [
+  { text: "[SYS ] RESTART REQUEST ACCEPTED......OK", hold: 160 },
+  { text: "[SYS ] STOPPING ACTIVE TASKS.........COMPLETE", hold: 220 },
+  { text: "[SYS ] FLUSHING SESSION CACHE........COMPLETE", hold: 240 },
+  { text: "[BOOT] HANDOFF TO LDOS BOOTLDR.......COMPLETE", hold: 180 },
+  { text: "[BOOT] REINITIALIZING DEVICE TABLE...OK", hold: 180 },
+  { text: "[BOOT] RELOADING NETWORK STACK........OK", hold: 180 },
+  { text: "[APP ] STARTING CONSOLE KERNEL.......READY", hold: 620 },
+  { text: "[APP ] STARTING BTN LINK MODULE......READY", hold: 680 },
+  { text: "[APP ] STARTING AUTHENTICATION.......READY", hold: 740 },
+  { text: "[APP ] LOADING CONSOLE...............READY", hold: 760 },
+  { text: "[MSG ] RESTART COMPLETE / STANDBY", hold: 180 }
+];
+
+const greetingLines = [
+  { text: "LDoS 5.1 (C) 19XX TERMINAL SUBSYSTEM", hold: 140 },
+  { text: "NODE: #ops-main / BAUD: 14400", hold: 180 },
+  { text: "AUTH ONLINE.................READY", hold: 700 },
+  { text: "", hold: 80 },
+  { text: "Please enter your USERNAME and press [ENTER].", hold: 120 }
+];
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const authenticate = async (username, password) => {
+  const response = await fetch(`${ACCOUNTS_API_URL}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    if (response.status === 401) {
+      return { ok: false, code: "BAD_PASSWORD", message: payload.message || "Invalid credentials." };
+    }
+
+    if (response.status === 403) {
+      return { ok: false, code: "DISABLED", message: payload.message || "Account disabled." };
+    }
+
+    return { ok: false, code: "AUTH_FAILED", message: payload.message || "Authentication failed." };
+  }
+
+  if (payload.guest) {
+    return {
+      ok: true,
+      code: "GUEST_SESSION",
+      message: "Account not found in registry. Entering guest mode.",
+      role: "standard",
+      username
+    };
+  }
+
+  const role = String(payload.role || "standard").toLowerCase();
+  return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role, username };
+};
+
+const proceedToNextFile = () => {
+  window.location.href = NEXT_FILE_URL;
+};
+
+const addLine = (container, text) => {
+  const line = document.createElement("div");
+  line.className = "line";
+  line.textContent = text;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+  return line;
+};
+
+const typeLine = (container, text, speed = 18) => {
+  return new Promise((resolve) => {
+    let i = 0;
+    const line = addLine(container, "");
+
+    const tick = () => {
+      const typed = text.slice(0, i);
+      line.innerHTML = `${typed}<span class="typing-cursor">█</span>`;
+      i += 1;
+      if (i <= text.length) {
+        setTimeout(tick, speed);
+      } else {
+        line.textContent = text;
+        resolve();
+      }
+    };
+
+    tick();
+  });
+};
+
+const wipeBootLinesBackwards = () => {
+  return new Promise((resolve) => {
+    const lines = Array.from(bootOutput.querySelectorAll(".line"));
+    const totalChars = lines.reduce((sum, line) => sum + line.textContent.length, 0) || 1;
+    const charDelay = Math.max(1, Math.floor(1900 / totalChars));
+
+    const eraseTick = () => {
+      const activeLines = bootOutput.querySelectorAll(".line");
+      const lastLine = activeLines[activeLines.length - 1];
+
+      if (!lastLine) {
+        resolve();
+        return;
+      }
+
+      if (lastLine.textContent.length > 0) {
+        lastLine.textContent = lastLine.textContent.slice(0, -1);
+        setTimeout(eraseTick, charDelay);
+        return;
+      }
+
+      lastLine.remove();
+      setTimeout(eraseTick, 0);
+    };
+
+    eraseTick();
+  });
+};
+
+const showStatus = (message, isError = true) => {
+  status.textContent = message;
+  status.style.color = isError ? "var(--error)" : "var(--fg)";
+  status.classList.add("show");
+};
+
+const clearStatus = () => {
+  status.textContent = "";
+  status.classList.remove("show");
+};
+
+const state = {
+  stage: "username",
+  username: ""
+};
+
+const beginConsole = async (skipIntro = false) => {
+  bootOutput.style.display = "none";
+  consoleOutput.classList.add("show");
+
+  if (!skipIntro) {
+    for (const entry of greetingLines) {
+      await typeLine(consoleOutput, entry.text, 14 + Math.floor(Math.random() * 13));
+      await wait(entry.hold);
+    }
+  } else {
+    addLine(consoleOutput, "SESSION RESTORED FROM LOGOUT.");
+    addLine(consoleOutput, "Enter USERNAME and press [ENTER].");
+  }
+
+  promptRow.classList.add("show");
+  consoleInput.focus();
+};
+
+const bootSequence = async () => {
+  const fastResume = new URLSearchParams(window.location.search).get("resume") === "1";
+  if (fastResume) {
+    await beginConsole(true);
+    return;
+  }
+
+  await wait(1300);
+
+  for (const entry of bootLines) {
+    await typeLine(bootOutput, entry.text, 10 + Math.floor(Math.random() * 14));
+    await wait(entry.hold);
+  }
+
+  await wait(140);
+  await wipeBootLinesBackwards();
+  await wait(120);
+  beginConsole();
+};
+
+consoleInput.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  clearStatus();
+
+  const value = consoleInput.value.trim();
+  if (!value) {
+    showStatus("INPUT REQUIRED.");
+    return;
+  }
+
+  if (state.stage === "username") {
+    state.username = value.toUpperCase();
+    pathLabel.textContent = `C://${state.username}`;
+
+    await typeLine(consoleOutput, `USERNAME ACCEPTED: ${state.username}`, 10);
+    await typeLine(consoleOutput, "Please enter your PASSWORD and press [ENTER].", 10);
+
+    state.stage = "password";
+    consoleInput.value = "";
+    consoleInput.type = "password";
+    return;
+  }
+
+  const masked = "*".repeat(Math.max(6, value.length));
+  await typeLine(consoleOutput, `PASSWORD: ${masked}`, 10);
+  await typeLine(consoleOutput, `AUTH REQUEST SENT FOR ${state.username}...`, 10);
+  showStatus("VERIFYING WITH REMOTE AUTH SERVICE...", false);
+
+  try {
+    const result = await authenticate(state.username, value);
+
+    if (result.ok) {
+      if (result.code === "GUEST_SESSION") {
+        await typeLine(consoleOutput, `GUEST ACCESS GRANTED: ${state.username}`, 10);
+        await typeLine(consoleOutput, "NOTICE: GUEST ACCOUNT ACTIVE (STANDARD MODE)", 10);
+      } else {
+        await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
+      }
+      const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
+        .slice(-8)
+        .map((line) => line.textContent)
+        .filter(Boolean);
+      sessionStorage.setItem("ars40:lastLines", JSON.stringify(recentLines));
+      sessionStorage.setItem("ars40:user", state.username);
+      sessionStorage.setItem("ars40:role", result.role || "standard");
+      await wait(260);
+      proceedToNextFile();
+      return;
+    }
+
+    if (result.code === "BAD_PASSWORD") {
+      await typeLine(consoleOutput, "ACCESS DENIED: INCORRECT PASSWORD", 10);
+      showStatus("INCORRECT PASSWORD. TRY AGAIN.");
+      consoleInput.value = "";
+      consoleInput.type = "password";
+      state.stage = "password";
+      return;
+    }
+
+    await typeLine(consoleOutput, `ACCESS DENIED: ${result.message || "AUTH FAILED"}`, 10);
+    showStatus((result.message || "AUTH FAILED").toUpperCase());
+  } catch (error) {
+    await typeLine(consoleOutput, "ACCESS DENIED: AUTHENTICATION SERVER UNAVAILABLE", 10);
+    showStatus("AUTH SERVICE UNAVAILABLE - TRY AGAIN LATER.");
+  }
+
+  consoleInput.value = "";
+  consoleInput.type = "text";
+  state.stage = "username";
+  state.username = "";
+  pathLabel.textContent = "C://CONSOLE";
+  await typeLine(consoleOutput, "", 10);
+  await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);
+});
+
+bootSequence();
