@@ -398,12 +398,34 @@
         return;
       }
 
-      const linkFlagIndex = args.findIndex((entry) => entry === "--link");
-      const externalUrl = linkFlagIndex >= 0 ? args.slice(linkFlagIndex + 1).join(" ").trim() : "";
-      const lockEnabled = args.includes("--lock");
+      let externalUrl = "";
+      let lockEnabled = false;
+      for (let i = 1; i < args.length; i += 1) {
+        const token = String(args[i] || "").trim();
+        if (!token) continue;
+        if (token === "--lock") {
+          lockEnabled = true;
+          continue;
+        }
+        if (token === "--link") {
+          const urlParts = [];
+          i += 1;
+          while (i < args.length) {
+            const nextToken = String(args[i] || "").trim();
+            if (!nextToken || nextToken.startsWith("--")) {
+              i -= 1;
+              break;
+            }
+            urlParts.push(nextToken);
+            i += 1;
+          }
+          externalUrl = urlParts.join(" ").trim();
+          continue;
+        }
+      }
       const mode = externalUrl ? "external" : "local";
 
-      if (linkFlagIndex >= 0 && !externalUrl) {
+      if (args.includes("--link") && !externalUrl) {
         showStatus("USAGE: create <filename> --link <url>", true);
         return;
       }
