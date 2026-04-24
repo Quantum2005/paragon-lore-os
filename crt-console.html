@@ -26,7 +26,13 @@
     </main>
   </div>
 
-  <script src="./assets/crt-console.js"></script>
+  <script>
+    const bootOutput = document.getElementById("bootOutput");
+    const consoleOutput = document.getElementById("consoleOutput");
+    const promptRow = document.getElementById("promptRow");
+    const pathLabel = document.getElementById("pathLabel");
+    const consoleInput = document.getElementById("consoleInput");
+    const status = document.getElementById("status");
 
     // Remote account API candidates (primary + optional overrides).
     const AUTH_API_DEFAULT = "https://api-worker.logicalsystems-yt.workers.dev";
@@ -66,6 +72,11 @@
       for (const base of AUTH_API_BASES) {
         try {
           const response = await fetch(`${base}${path}`, init);
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            lastError = new Error(`AUTH API NON-JSON RESPONSE FROM ${base}${path}`);
+            continue;
+          }
           return response;
         } catch (error) {
           lastError = error;
@@ -92,6 +103,10 @@
         }
 
         return { ok: false, code: "AUTH_FAILED", message: payload.message || "Authentication failed." };
+      }
+
+      if (payload.ok !== true && payload.guest !== true && !payload.role) {
+        return { ok: false, code: "AUTH_FAILED", message: "Authentication response was invalid." };
       }
 
       if (payload.guest) {
