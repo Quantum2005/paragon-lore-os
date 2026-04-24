@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARS-40 Touch Viewer</title>
+  <link rel="stylesheet" href="./assets/crt-console.css" />
+  <style>
+    .screen { gap: 0.8rem; }
+    .viewer-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.6rem;
+      font-size: clamp(13px, 1.75vw, 18px);
+      color: var(--fg-dim);
+    }
+    .viewer-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border: 1px solid rgba(137, 255, 159, 0.2);
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.6rem;
+      gap: 0.45rem;
+    }
+    .viewer-area {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      resize: none;
+      background: transparent;
+      color: var(--fg);
+      font-family: inherit;
+      font-size: clamp(13px, 1.65vw, 18px);
+      line-height: 1.38;
+      border: none;
+      outline: none;
+      caret-color: transparent;
+    }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .btn {
+      border: 1px solid rgba(137, 255, 159, 0.4);
+      background: rgba(0, 0, 0, 0.25);
+      color: var(--fg);
+      font-family: inherit;
+      font-size: clamp(12px, 1.4vw, 15px);
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+    }
+    .btn:hover, .btn:focus-visible { background: rgba(137, 255, 159, 0.16); outline: none; }
+    .status { min-height: 1.3em; }
+  </style>
+</head>
+<body>
+  <div class="crt" aria-label="CRT viewer interface">
+    <div class="noise" aria-hidden="true"></div>
+    <main class="screen" role="application" aria-label="ARS-40 touch read-only viewer">
+      <section class="viewer-header">
+        <span id="fileLabel">TOUCH://UNKNOWN</span>
+        <span id="userLabel">USER://GUEST</span>
+      </section>
+
+      <section class="viewer-panel">
+        <textarea id="viewer" class="viewer-area" readonly aria-label="Read-only text viewer"></textarea>
+        <div class="toolbar">
+          <button id="backBtn" class="btn" type="button">ESC RETURN</button>
+        </div>
+      </section>
+
+      <div id="status" class="status" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <script src="./assets/touch-viewer.js"></script>
+</body>
+</html>

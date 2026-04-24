@@ -8,6 +8,7 @@
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
+    const TOUCH_VIEWER_URL = "./touch-viewer.html";
     const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";
@@ -117,6 +118,7 @@
       addLine("  type <filename>     - Display full file contents.");
       addLine("  more <filename>     - Display first 25 lines.");
       addLine("  edit <filename>     - Open integrated text editor.");
+      addLine("  touch <filename>    - Open read-only file viewer.");
       addLine("  create <filename>                    - Create local text file.");
       addLine("  create <filename> --link <url>       - Create external link file.");
       addLine("  errors              - List API error codes and meanings.");
@@ -217,51 +219,12 @@
     };
 
     const openImageViewerWindow = (targetUrl, filename) => {
-      const viewer = window.open("", "_blank", "noopener");
-      if (!viewer) {
+      const viewerUrl = `./image-viewer.html?img=${encodeURIComponent(String(targetUrl || ""))}&target=${encodeURIComponent(String(targetUrl || ""))}&name=${encodeURIComponent(String(filename || "IMAGE"))}`;
+      const opened = window.open(viewerUrl, "_blank", "noopener");
+      if (!opened) {
         showStatus("POPUP BLOCKED. ALLOW POPUPS TO VIEW IMAGE LINK.", true);
         return false;
       }
-
-      const safeUrl = String(targetUrl || "").replace(/"/g, "&quot;");
-      const safeName = String(filename || "IMAGE").replace(/</g, "&lt;");
-      viewer.document.write(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${safeName}</title>
-  <style>
-    html, body { margin: 0; width: 100%; height: 100%; background: #020a04; color: #8bff9f; font-family: monospace; }
-    .wrap { width: 100%; height: 100%; display: grid; place-items: center; padding: 12px; box-sizing: border-box; }
-    .hint { position: fixed; top: 8px; left: 8px; font-size: 12px; opacity: 0.86; }
-    img {
-      max-width: min(92vw, 980px);
-      max-height: min(88vh, 760px);
-      image-rendering: pixelated;
-      filter: grayscale(1) sepia(1) hue-rotate(50deg) saturate(2.1) contrast(1.05);
-      cursor: pointer;
-      border: 1px solid rgba(139,255,159,0.35);
-      box-shadow: 0 0 0 1px rgba(139,255,159,0.18), 0 0 18px rgba(70, 255, 130, 0.2);
-    }
-  </style>
-</head>
-<body>
-  <div class="hint">IMAGE LINK VIEWER — click image to open source page</div>
-  <div class="wrap">
-    <img id="linkedImage" src="${safeUrl}" alt="${safeName}" />
-  </div>
-  <script>
-    const srcUrl = ${JSON.stringify(targetUrl)};
-    const image = document.getElementById("linkedImage");
-    image.addEventListener("click", () => { window.location.href = srcUrl; });
-    image.addEventListener("error", () => {
-      document.body.insertAdjacentHTML("beforeend", "<div style='position:fixed;bottom:8px;left:8px;color:#ff9696'>FAILED TO LOAD IMAGE SOURCE</div>");
-    });
-  <\/script>
-</body>
-</html>`);
-      viewer.document.close();
       return true;
     };
 
@@ -364,6 +327,30 @@
         window.location.href = `${EDITOR_URL}?file=${encodeURIComponent(filename)}`;
       } catch (error) {
         showStatus(formatApiError(error, "EDIT ERROR"), true);
+      }
+    };
+
+    const runTouchCommand = async (filename) => {
+      if (!filename) {
+        showStatus("USAGE: touch <filename>", true);
+        return;
+      }
+
+      try {
+        const file = await readFile(filename);
+        if (Number(file.is_external) === 1 && file.external_url) {
+          if (openExternalByType(file, "TOUCH")) {
+            return;
+          }
+          addLine(`EXTERNAL PAGE FOR ${file.filename}: ${file.external_url}`);
+          window.open(file.external_url, "_blank", "noopener");
+          showStatus("EXTERNAL LINK OPENED IN NEW PAGE.", false);
+          return;
+        }
+
+        window.location.href = `${TOUCH_VIEWER_URL}?file=${encodeURIComponent(filename)}`;
+      } catch (error) {
+        showStatus(formatApiError(error, "TOUCH ERROR"), true);
       }
     };
 
@@ -475,6 +462,11 @@
 
       if (cmd === "edit") {
         void runEditCommand(args.join(" ").trim());
+        return;
+      }
+
+      if (cmd === "touch") {
+        void runTouchCommand(args.join(" ").trim());
         return;
       }
 
