@@ -78,6 +78,7 @@ const routeApi = async (request, env, pathname) => {
   }
 
   await ensureFileTable(env.ars40_db);
+  await ensureDemoFiles(env.ars40_db);
 
   if (request.method === "GET" && pathname === "/api/files") {
     const rows = await env.ars40_db.prepare(`
