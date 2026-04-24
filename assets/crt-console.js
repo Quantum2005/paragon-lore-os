@@ -82,16 +82,31 @@ const authenticate = async (username, password) => {
 
   if (payload.guest) {
     return {
-      ok: true,
-      code: "GUEST_SESSION",
-      message: "Account not found in registry. Entering guest mode.",
+      ok: false,
+      code: "USER_NOT_FOUND",
+      message: "Account not found in registry.",
       role: "standard",
-      username
+      username,
+      guest: true
     };
   }
 
   const role = String(payload.role || "standard").toLowerCase();
   return { ok: true, code: "AUTH_OK", message: "Authentication accepted.", role, username };
+};
+
+const registerUser = async (username, password) => {
+  const response = await fetchWithBackendFallback("/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    const message = payload?.message || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
 };
 
 const proceedToNextFile = () => {
@@ -171,7 +186,8 @@ const clearStatus = () => {
 const state = {
   stage: "username",
   username: "",
-  rawUsername: ""
+  rawUsername: "",
+  pendingPassword: ""
 };
 
 const logsDebug = {
@@ -366,6 +382,39 @@ consoleInput.addEventListener("keydown", async (event) => {
     return;
   }
 
+  if (state.stage === "registerConfirm") {
+    const answer = value.toLowerCase();
+    if (answer !== "y" && answer !== "n") {
+      showStatus("RESPOND WITH Y OR N.");
+      return;
+    }
+
+    if (answer === "y") {
+      try {
+        await typeLine(consoleOutput, `REGISTER REQUEST SENT FOR ${state.username}...`, 10);
+        await registerUser(state.username, state.pendingPassword);
+        await typeLine(consoleOutput, `ACCOUNT CREATED: ${state.username}`, 10);
+        showStatus("ACCOUNT CREATED. LOG IN WITH YOUR NEW CREDENTIALS.", false);
+      } catch (error) {
+        await typeLine(consoleOutput, `REGISTRATION FAILED: ${String(error?.message || "UNKNOWN ERROR").toUpperCase()}`, 10);
+        showStatus("ACCOUNT CREATION FAILED.");
+      }
+    } else {
+      await typeLine(consoleOutput, "REGISTRATION CANCELLED. RETURNING TO LOGIN.", 10);
+      showStatus("LOGIN RESTARTED.", false);
+    }
+
+    consoleInput.value = "";
+    consoleInput.type = "text";
+    state.stage = "username";
+    state.username = "";
+    state.rawUsername = "";
+    state.pendingPassword = "";
+    pathLabel.textContent = "C://CONSOLE";
+    await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);
+    return;
+  }
+
   if (state.stage === "username") {
     state.rawUsername = value;
     state.username = value.toUpperCase();
@@ -387,7 +436,7 @@ consoleInput.addEventListener("keydown", async (event) => {
 
   if (state.rawUsername === "openLogs" && value === "Logs123") {
     await typeLine(consoleOutput, "LOG DIAGNOSTICS ACCESS GRANTED", 10);
-    showStatus("LOG PANEL OPENED. DRAG HEADER TO MOVE. CLICK X TO CLOSE.", false);
+    showStatus("DIAGNOSTICS PANEL ENABLED", false);
     await openLogsPanel();
     consoleInput.value = "";
     consoleInput.type = "text";
@@ -402,13 +451,18 @@ consoleInput.addEventListener("keydown", async (event) => {
   try {
     const result = await authenticate(state.username, value);
 
+    if (result.code === "USER_NOT_FOUND") {
+      state.pendingPassword = value;
+      await typeLine(consoleOutput, `ACCOUNT ${state.username} NOT FOUND. CREATE ACCOUNT WITH CURRENT CREDENTIALS? [Y/N]`, 10);
+      showStatus("USER NOT FOUND. RESPOND Y OR N.", false);
+      consoleInput.value = "";
+      consoleInput.type = "text";
+      state.stage = "registerConfirm";
+      return;
+    }
+
     if (result.ok) {
-      if (result.code === "GUEST_SESSION") {
-        await typeLine(consoleOutput, `GUEST ACCESS GRANTED: ${state.username}`, 10);
-        await typeLine(consoleOutput, "NOTICE: GUEST ACCOUNT ACTIVE (STANDARD MODE)", 10);
-      } else {
-        await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
-      }
+      await typeLine(consoleOutput, `ACCESS GRANTED: ${state.username}`, 10);
       const recentLines = Array.from(consoleOutput.querySelectorAll(".line"))
         .slice(-8)
         .map((line) => line.textContent)
@@ -442,6 +496,7 @@ consoleInput.addEventListener("keydown", async (event) => {
   state.stage = "username";
   state.username = "";
   state.rawUsername = "";
+  state.pendingPassword = "";
   pathLabel.textContent = "C://CONSOLE";
   await typeLine(consoleOutput, "", 10);
   await typeLine(consoleOutput, "Please enter your USERNAME and press [ENTER].", 10);

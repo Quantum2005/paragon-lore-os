@@ -286,6 +286,25 @@ const routeAuth = async (request, env, pathname) => {
     return json({ ok: true, id });
   }
 
+  if (request.method === "POST" && pathname === "/auth/admin/elevate") {
+    const id = Number(body?.id);
+    const requestedRole = String(body?.role || "").trim().toLowerCase();
+    const actorRole = String(request.headers.get("x-ars40-role") || "standard").trim().toLowerCase();
+    const allowedRole = actorRole === "manager" ? "administrator" : actorRole === "administrator" ? "editor" : "";
+    if (!allowedRole) return json({ ok: false, message: "Insufficient role for elevate." }, 403);
+    if (!Number.isInteger(id) || id <= 0 || requestedRole !== allowedRole) {
+      return json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRole}.` }, 400);
+    }
+
+    const result = await env.ars40_db.prepare(`
+      UPDATE accounts
+      SET role = ?2, updated_at = datetime('now')
+      WHERE id = ?1
+    `).bind(id, requestedRole).run();
+    if (!result.meta?.changes) return json({ ok: false, message: "Account not found." }, 404);
+    return json({ ok: true, id, role: requestedRole });
+  }
+
   return json({ ok: false, message: "Unsupported auth route." }, 404);
 };
 

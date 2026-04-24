@@ -27,7 +27,7 @@
     const user = sessionStorage.getItem("ars40:user") || "GUEST";
     const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 
-    const roleAllowed = new Set(["standard", "editor", "administrator"]);
+    const roleAllowed = new Set(["standard", "editor", "administrator", "manager"]);
     const activeRole = roleAllowed.has(role) ? role : "standard";
 
     pathLabel.textContent = `ARS40://${user}`;
@@ -122,11 +122,14 @@
       addLine("  create <filename>                    - Create local text file.");
       addLine("  create <filename> --link <url>       - Create external link file.");
       addLine("  errors              - List API error codes and meanings.");
-      if (activeRole === "administrator") {
-        addLine("  goto <url> - Navigate to a specified URL (administrator only).");
-        addLine("  register <user> <pass> - Create registry account (administrator only).");
-        addLine("  setuser <id> <user> - Change username by DB id (administrator only).");
-        addLine("  setpass <id> <pass> - Change password by DB id (administrator only).");
+      if (activeRole === "administrator" || activeRole === "manager") {
+        addLine("  goto <url> - Navigate to a specified URL (administrator/manager).");
+        addLine("  register <user> <pass> - Create registry account (administrator/manager).");
+        addLine("  setuser <id> <user> - Change username by DB id (administrator/manager).");
+        addLine("  setpass <id> <pass> - Change password by DB id (administrator/manager).");
+      }
+      if (activeRole === "administrator" || activeRole === "manager") {
+        addLine("  elevate <id> <role> - Promote a user one level below your role.");
       }
       addLine(`CURRENT ROLE: ${activeRole.toUpperCase()}`);
       addLine("SECURITY NOTICE: Do not reuse real-world passwords. Demo environment only.");
@@ -181,10 +184,10 @@
       return payload;
     };
 
-    const callAuthApi = async (path, body) => {
+    const callAuthApi = async (path, body, extraHeaders = {}) => {
       const response = await fetchWithBackendFallback(`${ACCOUNTS_API_URL}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...extraHeaders },
         body: JSON.stringify(body || {})
       });
       const payload = await response.json().catch(() => ({}));
@@ -481,7 +484,7 @@
       }
 
       if (cmd === "goto") {
-        if (activeRole !== "administrator") {
+        if (activeRole !== "administrator" && activeRole !== "manager") {
           showStatus("ACCESS DENIED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
@@ -499,7 +502,7 @@
       }
 
       if (cmd === "register") {
-        if (activeRole !== "administrator") {
+        if (activeRole !== "administrator" && activeRole !== "manager") {
           showStatus("ACCESS DENIED [ERROR 401 UNAUTHORIZED]", true);
           return;
         }
@@ -509,8 +512,8 @@
       }
 
       if (cmd === "setuser") {
-        if (activeRole !== "administrator") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+        if (activeRole !== "administrator" && activeRole !== "manager") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR OR MANAGER ONLY", true);
           return;
         }
 
@@ -519,12 +522,22 @@
       }
 
       if (cmd === "setpass") {
-        if (activeRole !== "administrator") {
-          showStatus("PERMISSION DENIED: ADMINISTRATOR ONLY", true);
+        if (activeRole !== "administrator" && activeRole !== "manager") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR OR MANAGER ONLY", true);
           return;
         }
 
         void adminUpdatePassword(args);
+        return;
+      }
+
+      if (cmd === "elevate") {
+        if (activeRole !== "administrator" && activeRole !== "manager") {
+          showStatus("PERMISSION DENIED: ADMINISTRATOR OR MANAGER ONLY", true);
+          return;
+        }
+
+        void elevateUserRole(args);
         return;
       }
 
@@ -623,6 +636,29 @@
         addLine(`ACCOUNT UPDATED: ID ${id} PASSWORD CHANGED`);
       } catch (error) {
         showStatus(formatApiError(error, "SETPASS FAILED"), true);
+      }
+    };
+
+    const elevateUserRole = async (args) => {
+      const id = Number(args[0]);
+      const targetRole = String(args[1] || "").trim().toLowerCase();
+
+      if (!Number.isInteger(id) || id <= 0 || !targetRole) {
+        showStatus("USAGE: elevate <db_id> <role>", true);
+        return;
+      }
+
+      const allowedTarget = activeRole === "manager" ? "administrator" : "editor";
+      if (targetRole !== allowedTarget) {
+        showStatus(`ACCESS RULE: ${activeRole.toUpperCase()} MAY ONLY ELEVATE TO ${allowedTarget.toUpperCase()}`, true);
+        return;
+      }
+
+      try {
+        await callAuthApi("/admin/elevate", { id, role: targetRole }, { "x-ars40-role": activeRole });
+        addLine(`ACCOUNT UPDATED: ID ${id} ROLE -> ${targetRole.toUpperCase()}`);
+      } catch (error) {
+        showStatus(formatApiError(error, "ELEVATE FAILED"), true);
       }
     };
 

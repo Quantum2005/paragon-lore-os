@@ -146,6 +146,34 @@ app.post("/auth/admin/update-password", async (req, res) => {
   res.json({ ok: true, id });
 });
 
+app.post("/auth/admin/elevate", async (req, res) => {
+  const id = Number(req.body?.id);
+  const requestedRole = String(req.body?.role || "").trim().toLowerCase();
+  const actorRole = String(req.headers["x-ars40-role"] || "standard").trim().toLowerCase();
+  const allowedRole = actorRole === "manager" ? "administrator" : actorRole === "administrator" ? "editor" : "";
+
+  if (!allowedRole) {
+    res.status(403).json({ ok: false, message: "Insufficient role for elevate." });
+    return;
+  }
+  if (!Number.isInteger(id) || id <= 0 || requestedRole !== allowedRole) {
+    res.status(400).json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRole}.` });
+    return;
+  }
+
+  const { payload, list } = await loadAccounts();
+  const index = id - 1;
+  if (!list[index]) {
+    res.status(404).json({ ok: false, message: "Account not found." });
+    return;
+  }
+
+  list[index].role = requestedRole;
+  payload.accounts = list;
+  await fs.writeFile(ACCOUNTS_PATH, JSON.stringify(payload, null, 2) + "\n", "utf8");
+  res.json({ ok: true, id, role: requestedRole });
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
