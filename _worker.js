@@ -4,6 +4,8 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type,x-ars40-user"
 };
 
+const DEFAULT_AUTH_API_BASE = "https://api-worker.logicalsystems-yt.workers.dev";
+
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: {
