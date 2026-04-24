@@ -187,12 +187,6 @@ const ensureAccountsTable = async (db) => {
   `).run();
 };
 
-const sha256Hex = async (value) => {
-  const bytes = new TextEncoder().encode(String(value || ""));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((part) => part.toString(16).padStart(2, "0")).join("");
-};
-
 const routeAuth = async (request, env, pathname) => {
   if (!env.ars40_db) {
     return json({ ok: false, message: "D1 binding ars40_db is not configured." }, 500);
@@ -216,8 +210,7 @@ const routeAuth = async (request, env, pathname) => {
     if (!account) return json({ ok: true, guest: true, role: "standard", username });
     if (Number(account.enabled) !== 1) return json({ ok: false, message: "Account disabled." }, 403);
 
-    const hashed = await sha256Hex(password);
-    if (hashed !== String(account.password_hash || "")) return json({ ok: false, message: "Invalid credentials." }, 401);
+    if (password !== String(account.password_hash || "")) return json({ ok: false, message: "Invalid credentials." }, 401);
     return json({ ok: true, username: account.username, role: account.role || "standard" });
   }
 
@@ -227,12 +220,11 @@ const routeAuth = async (request, env, pathname) => {
     if (!/^[A-Z0-9_-]{3,20}$/.test(username)) return json({ ok: false, message: "Invalid username format." }, 400);
     if (password.length < 4) return json({ ok: false, message: "Password must be at least 4 characters." }, 400);
 
-    const passwordHash = await sha256Hex(password);
     try {
       const insert = await env.ars40_db.prepare(`
         INSERT INTO accounts (username, password_hash, role, enabled)
         VALUES (?1, ?2, 'standard', 1)
-      `).bind(username, passwordHash).run();
+      `).bind(username, password).run();
       return json({ ok: true, id: insert.meta?.last_row_id || null, username, role: "standard" }, 201);
     } catch {
       return json({ ok: false, message: "Username already exists." }, 409);
@@ -263,12 +255,11 @@ const routeAuth = async (request, env, pathname) => {
     const password = String(body?.password || "");
     if (!Number.isInteger(id) || id <= 0 || password.length < 4) return json({ ok: false, message: "Invalid id or password." }, 400);
 
-    const passwordHash = await sha256Hex(password);
     const result = await env.ars40_db.prepare(`
       UPDATE accounts
       SET password_hash = ?2, updated_at = datetime('now')
       WHERE id = ?1
-    `).bind(id, passwordHash).run();
+    `).bind(id, password).run();
     if (!result.meta?.changes) return json({ ok: false, message: "Account not found." }, 404);
     return json({ ok: true, id });
   }
