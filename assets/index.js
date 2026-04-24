@@ -1,0 +1,362 @@
+const TARGET_URL = "./crt-console.html";
+const POWER_IMG_OFF = "./assets/power-off.png";
+const POWER_IMG_ON = "./assets/power-on.png";
+
+const preBootTemplates = [
+  "Starting MS-DOS...",
+  "HIMEM is testing extended memory...done.",
+  "XMS manager installed. 655360K available.",
+  "Drive C: FAT16, Serial {{DRIVE_SERIAL}}",
+  "Session start time: {{SESSION_START}}",
+  "Reading CONFIG.SYS",
+  "Loading DEVICE=OAKCDROM.SYS /D:MSCD001",
+  "Loading AUTOEXEC.BAT",
+  "SET PATH=C:\\DOS;C:\\LDOS",
+  "C:\\DOS>VER",
+  "MS-DOS Version 6.22",
+  "Checking SMARTDRV cache...ready.",
+  "Preparing Terminal Logging...ready.",
+  "Detecting peripherals...ok."
+];
+
+const ldosLines = [
+  "LDOS V5.1 - DEVELOPED FOR ARMED RESEARCH SITE 40",
+  "DEVELOPED BY AMBROSE SOFTWARE GROUP LTD, CALIFORNIA",
+  "INITIALIZING SECURITY BUS...",
+  "SYNCING RTC...",
+  "LOADING BOOT PROGRAM...",
+  "COMPILING LDOSINTRANET.SYS",
+  "COMPILING BITNET COMMUNICATIONS DRIVER V2.4A",
+  "SCANNING AVAILABLE NODES",
+  "LOADING GRAPHICAL INTERFACE",
+  "INTERFACE READY"
+];
+
+// Configurable pools used for synthetic machine profile values.
+const machinePools = {
+  cpu: ["Intel 80486DX2", "Pentium MMX", "Cyrix 6x86", "AMD K6-2", "Virtual x86 Host"],
+  ram: ["8 MB", "16 MB", "32 MB", "64 MB", "128 MB"],
+  bios: ["PhoenixBIOS 4.0", "AMI BIOS 1.00.12", "Award Modular BIOS v4.51PG"],
+  nic: ["NE2000 Compatible", "3Com 3C509", "Intel EtherExpress PRO/100", "Virtual Ethernet Adapter"],
+  storage: ["Quantum Fireball 6.4GB", "Seagate Medalist 4.3GB", "WDC Caviar 8.4GB", "Virtual IDE Disk 10GB"],
+  video: ["VGA Compatible", "S3 Trio64V+", "Tseng ET4000AX", "Virtual SVGA II"]
+};
+
+// Timing controls: increase values to slow down, decrease to speed up.
+const timing = {
+  char: 18,
+  line: 180,
+  scanTick: 145,
+  detailDelay: 75,
+  progressMin: 35,
+  progressRand: 55
+};
+
+const nodes = [
+  { id: "ASU-5", name: "APPALACHIA STATE UNIV. NODE 5", status: "PUBLIC", location: "[LOCATION REDACTED]" },
+  { id: "SCD-9", name: "SCIENTIFIC OFFICES DESK 5", status: "SECURE", location: "[HAMILTON OFFICE COMPLEX]" },
+  { id: "VAO-1", name: "CDC OFFICE DESK 1", status: "SECURE", location: "[CLASS D CONTAINMENT ZONE]" },
+  { id: "ARC-1", name: "ARCHIVAL DEPT. CONSOLE", status: "UNKNOWN", location: "[LOCATION UNKNOWN - CONTACT SYSADMIN!]" },
+  { id: "CM-0", name: "COMMUNICATIONS DEPARTMENT OFFICE", status: "SECURE", location: "[HAMILTON SERVER ROOM]" },
+  { id: "AAC-12", name: "CONTROL ROOM OFFICES DESK 12", status: "[CLASSIFIED]", location: "[CLASSIFIED]" },
+  { id: "EC-2", name: "ETHICS COMMITTEE OFFICE DATABASE ACCESS POINT", status: "MONITORING", location: "[MP WING]" }
+];
+
+const terminal = document.getElementById("terminal");
+const powerButton = document.getElementById("powerButton");
+const powerIcon = document.getElementById("powerIcon");
+let allowManualScroll = false;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const rnd = (n) => Math.floor(Math.random() * n);
+
+function autoScrollTerminal() {
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function preventManualScroll(event) {
+  if (!allowManualScroll) {
+    event.preventDefault();
+  }
+}
+
+function pickNode() {
+  return nodes[rnd(nodes.length)];
+}
+
+function pickFrom(pool) {
+  return pool[rnd(pool.length)];
+}
+
+function fakeIPv4() {
+  return `${10 + rnd(200)}.${rnd(256)}.${rnd(256)}.${2 + rnd(220)}`;
+}
+
+function fakeProxy() {
+  return `proxy-${100 + rnd(900)}.seg-${rnd(16).toString(16).toUpperCase()}.int`;
+}
+
+function fakeHex(size = 8) {
+  const chars = "ABCDEF0123456789";
+  let out = "";
+  for (let i = 0; i < size; i++) out += chars[rnd(chars.length)];
+  return out;
+}
+
+function randomDriveSerial() {
+  return `${fakeHex(4)}-${fakeHex(4)}`;
+}
+
+function formatSessionTime(date) {
+  return date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+}
+
+function buildPreBootLines(sessionStart) {
+  const serial = randomDriveSerial();
+  const sessionText = formatSessionTime(sessionStart);
+
+  return preBootTemplates.map((line) =>
+    line
+      .replace("{{DRIVE_SERIAL}}", serial)
+      .replace("{{SESSION_START}}", sessionText)
+  );
+}
+
+function buildMachineInfo() {
+  const cores = navigator.hardwareConcurrency || `${2 + rnd(6)} (est)`;
+  const memory = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : pickFrom(machinePools.ram);
+  const platform = navigator.platform || "UNKNOWN";
+
+  return {
+    cpu: pickFrom(machinePools.cpu),
+    ram: memory,
+    bios: pickFrom(machinePools.bios),
+    nic: pickFrom(machinePools.nic),
+    storage: pickFrom(machinePools.storage),
+    video: pickFrom(machinePools.video),
+    os: platform,
+    cores: String(cores)
+  };
+}
+
+function addLine(text = "") {
+  const el = document.createElement("div");
+  el.className = "line";
+  el.textContent = text;
+  terminal.appendChild(el);
+  autoScrollTerminal();
+  return el;
+}
+
+async function typeInto(el, text, speed = timing.char) {
+  el.textContent = "";
+  for (const ch of text) {
+    el.textContent += ch;
+    autoScrollTerminal();
+    await sleep(speed);
+  }
+}
+
+async function typeLine(text, prefix = "> ", instant = false) {
+  const el = addLine();
+  if (instant) {
+    el.textContent = `${prefix}${text}`;
+    autoScrollTerminal();
+  } else {
+    await typeInto(el, `${prefix}${text}`);
+  }
+  await sleep(timing.line);
+  return el;
+}
+
+async function progressLine(label) {
+  const el = addLine();
+  const width = 20;
+
+  const paint = (position, marker = "") => {
+    const pct = Math.round((position / width) * 100).toString().padStart(3, " ");
+    el.textContent = `> ${label.padEnd(30, " ")} [${"#".repeat(position)}${" ".repeat(width - position)}] ${pct}%${marker}`;
+    autoScrollTerminal();
+  };
+
+  for (let i = 0; i <= width; i++) {
+    paint(i);
+
+    // Add occasional compile "stutter" to mimic unstable disk/CPU bursts.
+    if (i > 1 && i < width - 1 && rnd(100) < 26) {
+      const fallback = Math.max(0, i - 1);
+      paint(fallback, " ..");
+      await sleep(timing.progressMin + rnd(timing.progressRand) + 90);
+      paint(i, " .");
+      await sleep(timing.progressMin + rnd(timing.progressRand) + 45);
+    }
+
+    await sleep(timing.progressMin + rnd(timing.progressRand));
+  }
+
+  await sleep(timing.line);
+}
+
+async function renderTransitionBox() {
+  addLine("+--------------------------------------------+");
+  addLine("|   PRE-BOOT CHECKS COMPLETE  - DEVICE OK    |");
+  addLine("|           MACHINE SPECIFICATIONS           |");
+  addLine("+--------------------------------------------+");
+  await sleep(timing.line);
+}
+
+async function renderMachineSpecs() {
+  const info = buildMachineInfo();
+  addLine("> PARSING...");
+  addLine("  HARDWARE |           SPECIFICATIONS");
+  addLine("  ----------------------------------------------");
+
+  const rows = [
+    `  CPU        ${info.cpu}`,
+    `  CORES      ${info.cores}`,
+    `  MEMORY     ${info.ram}`,
+    `  BIOS       ${info.bios}`,
+    `  STORAGE    ${info.storage}`,
+    `  VIDEO      ${info.video}`,
+    `  NIC        ${info.nic}`,
+    `  PLATFORM   ${info.os}`
+  ];
+
+  for (const row of rows) {
+    await typeLine(row, "");
+  }
+
+  addLine("  ----------------------------------------------");
+  await sleep(timing.line);
+}
+
+async function runNodeScan() {
+  const entries = [];
+  let selected = pickNode();
+
+  addLine("> NETWORK SCAN -OPT -SEC");
+  addLine("  Name       Type   Address         Proxy         Status");
+  addLine("  ---------------------------------------------------------");
+
+  const availableNodes = [...nodes].sort(() => Math.random() - 0.5);
+  const tableRows = [];
+  for (let i = 0; i < availableNodes.length; i++) {
+    tableRows.push(addLine(""));
+  }
+
+  for (let i = 0; i < tableRows.length; i++) {
+    const candidate = availableNodes[i];
+    const ip = fakeIPv4();
+    const proxy = `seg-${rnd(16).toString(16).toUpperCase()}${rnd(10)}`;
+    const nodeType = i % 2 === 0 ? "XDN" : "UDP";
+    const status = i === 0 ? "Selected" : "Registered";
+
+    entries[i] = { candidate, ip, proxy, nodeType, status };
+
+    const name = candidate.id.padEnd(10, " ");
+    const type = nodeType.padEnd(6, " ");
+    const addr = ip.padEnd(16, " ");
+    const px = proxy.padEnd(13, " ");
+    tableRows[i].textContent = `  ${name}${type}${addr}${px}${status}`;
+
+    autoScrollTerminal();
+    await sleep(timing.scanTick);
+  }
+
+  addLine("");
+  selected = entries[0].candidate;
+  addLine(`> LINK LOCKED  NODE=${selected.id}  IP=${entries[0].ip}  PROXY=${entries[0].proxy}  RTT=${15 + rnd(40)}ms`);
+  await sleep(timing.line);
+  return selected;
+}
+
+async function showNode(node) {
+  const details = [
+    `  NODE ID   : ${node.id}`,
+    `  HOSTNAME  : ${node.name}`,
+    `  STATUS    : ${node.status}`,
+    `  LOCATION  : ${node.location}`,
+    `  IP        : ${fakeIPv4()}`,
+    `  PROXY     : ${fakeProxy()}`,
+    `  SESSION   : ${fakeHex(12)}`
+  ];
+
+  for (const detail of details) {
+    const row = addLine();
+    await typeInto(row, detail, Math.max(8, timing.char - 8));
+    await sleep(timing.detailDelay);
+  }
+}
+
+function openConsole() {
+  // Navigate in-place to the next GitHub Pages file.
+  window.location.href = TARGET_URL;
+}
+
+async function boot() {
+  powerButton.disabled = true;
+  powerButton.classList.add("on");
+  powerIcon.src = POWER_IMG_ON;
+  powerIcon.alt = "Power on";
+
+  setTimeout(() => {
+    powerButton.style.visibility = "hidden";
+  }, 5000);
+
+  terminal.innerHTML = "";
+  allowManualScroll = false;
+
+  const sessionStart = new Date();
+  const preBootLines = buildPreBootLines(sessionStart);
+
+  for (const line of preBootLines) {
+    await typeLine(line, "", true);
+  }
+
+  addLine("");
+  addLine("");
+  addLine("");
+  addLine("");
+  await renderTransitionBox();
+  addLine("");
+  await renderMachineSpecs();
+  addLine("");
+
+  await typeLine(ldosLines[0]);
+  await typeLine(ldosLines[1]);
+  await typeLine(ldosLines[2]);
+  await typeLine(ldosLines[3]);
+
+  addLine("");
+  await progressLine(ldosLines[4]);
+  await progressLine(ldosLines[5]);
+  await progressLine(ldosLines[6]);
+  addLine("");
+
+  const node = await runNodeScan();
+  await typeLine(`CONNECTING TO NODE ${node.id}`);
+  await showNode(node);
+  addLine("");
+
+  await typeLine(ldosLines[8]);
+  await typeLine(ldosLines[9]);
+  allowManualScroll = true;
+  openConsole();
+
+  const prompt = addLine("C:\\CONSOLE>");
+  const cursor = document.createElement("span");
+  cursor.className = "cursor";
+  prompt.appendChild(cursor);
+  autoScrollTerminal();
+
+}
+
+powerButton.addEventListener("click", boot);
+terminal.addEventListener("wheel", preventManualScroll, { passive: false });
+terminal.addEventListener("touchmove", preventManualScroll, { passive: false });
+terminal.addEventListener("keydown", (event) => {
+  const blockedKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "];
+  if (!allowManualScroll && blockedKeys.includes(event.key)) {
+    event.preventDefault();
+  }
+});
