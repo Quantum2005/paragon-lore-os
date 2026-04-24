@@ -5,8 +5,8 @@ const pathLabel = document.getElementById("pathLabel");
 const consoleInput = document.getElementById("consoleInput");
 const status = document.getElementById("status");
 
-// Remote account API.
-const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+// Auth API is served through same-origin proxy route to avoid cross-origin failures.
+const ACCOUNTS_API_URL = "/auth";
 // Next page to open on successful login (GitHub Pages-friendly relative path).
 const NEXT_FILE_URL = "./ars40-console.html";
 

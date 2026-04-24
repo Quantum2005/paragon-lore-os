@@ -8,7 +8,7 @@
     const POWER_OFF_URL = "./index.html";
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
-    const ACCOUNTS_API_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+    const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";
     const API_ERROR_MEANINGS = {
       E_BINDING_MISSING: "Database binding missing in runtime.",
