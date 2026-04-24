@@ -116,7 +116,7 @@
 " ___/ / /___/ ____/    / __/ / /_/ / /_/ / /|  / /_/ / ___ |/ / _/ // /_/ / /|  /       ",
 "/____/\\____/_/        /_/    \\____/\\____/_/ |_/_____/_/  |_/_/ /___/\\____/_/ |_/        ",
                                                                                    
-"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                     "
+"                        PARAGON RESEARCH INSTITUTE (ARS-40) CONSOLE                         "
     ];
 
     const printHelp = () => {
