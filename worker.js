@@ -31,8 +31,8 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   }
 });
 
-const ensureFileTable = async (db) => {
-  await db.prepare(`
+const ensureFileTable = async (database) => {
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       filename TEXT NOT NULL UNIQUE,
@@ -47,8 +47,8 @@ const ensureFileTable = async (db) => {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
-  await db.prepare("ALTER TABLE files ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0").run().catch(() => {});
-  await db.prepare("ALTER TABLE files ADD COLUMN lock_password TEXT").run().catch(() => {});
+  await database.prepare("ALTER TABLE files ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0").run().catch(() => {});
+  await database.prepare("ALTER TABLE files ADD COLUMN lock_password TEXT").run().catch(() => {});
 };
 
 
@@ -240,8 +240,8 @@ const routeApi = async (request, env, pathname) => {
   return json({ ok: false, code: ERROR_CODES.UNSUPPORTED_ROUTE, message: "Unsupported API route." }, 404);
 };
 
-const ensureAccountsTable = async (db) => {
-  await db.prepare(`
+const ensureAccountsTable = async (database) => {
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
@@ -623,8 +623,8 @@ const getRole = (request) => {
   return raw in CHAT_ROLE_LEVELS ? raw : "standard";
 };
 
-const ensureChatTables = async (db) => {
-  await db.prepare(`
+const ensureChatTables = async (database) => {
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS relay_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       message_uid TEXT NOT NULL UNIQUE,
@@ -643,7 +643,7 @@ const ensureChatTables = async (db) => {
     )
   `).run();
 
-  await db.prepare(`
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS relay_user_flags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
@@ -662,7 +662,7 @@ const ensureChatTables = async (db) => {
     )
   `).run();
 
-  await db.prepare(`
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS relay_moderation_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
