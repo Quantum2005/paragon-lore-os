@@ -51,27 +51,6 @@ const ensureFileTable = async (database) => {
   await database.prepare("ALTER TABLE files ADD COLUMN lock_password TEXT").run().catch(() => {});
 };
 
-
-const ensureDemoFiles = async (db) => {
-  await db.batch([
-    db.prepare(`
-      INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
-      VALUES ('youtube.mp4', '', 1, 'https://samplelib.com/lib/preview/mp4/sample-5s.mp4', 'SYSTEM', 'SYSTEM')
-      ON CONFLICT(filename) DO NOTHING
-    `),
-    db.prepare(`
-      INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
-      VALUES ('wikipedia.txt', '', 1, 'https://en.wikipedia.org/wiki/Main_Page', 'SYSTEM', 'SYSTEM')
-      ON CONFLICT(filename) DO NOTHING
-    `),
-    db.prepare(`
-      INSERT INTO files (filename, content, is_external, external_url, created_by, updated_by)
-      VALUES ('gyazo.jpg', '', 1, 'https://gyazo.com/64cbbfe5734d5368d7317139bd438d6d', 'SYSTEM', 'SYSTEM')
-      ON CONFLICT(filename) DO NOTHING
-    `)
-  ]);
-};
-
 const normalizeFilename = (value) => String(value || "").trim();
 
 const validateFilename = (value) => /^[a-zA-Z0-9._-]{1,80}$/.test(value);

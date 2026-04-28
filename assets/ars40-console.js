@@ -9,7 +9,7 @@
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
     const TOUCH_VIEWER_URL = "./touch-viewer.html";
-    const RELAY_CHAT_URL = "./chat-relay.html";
+    const RELAY_CHAT_URL = "./chat.html";
     const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";

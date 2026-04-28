@@ -3,10 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interchat Relay</title>
-  <meta http-equiv="refresh" content="0; url=./chat-relay.html" />
+  <title>Relay Chat Service</title>
+  <link rel="stylesheet" href="./assets/chat-relay.css" />
 </head>
 <body>
-  <p>Redirecting to <a href="./chat-relay.html">Interchat Relay</a>...</p>
+  <div class="crt" aria-label="Relay chat interface">
+    <div class="noise" aria-hidden="true"></div>
+    <main class="screen">
+      <header class="topbar">
+        <div>INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
+        <div id="whoami"></div>
+      </header>
+
+      <section class="table-wrap">
+        <table class="chat-table" id="chatTable">
+          <thead>
+            <tr>
+              <th class="meta-col">USERNAME</th>
+              <th class="meta-col">TIME</th>
+              <th>CHAT</th>
+            </tr>
+          </thead>
+          <tbody id="chatBody"></tbody>
+        </table>
+      </section>
+
+      <form id="composer" class="composer">
+        <span class="prompt">&gt;</span>
+        <input id="messageInput" type="text" maxlength="600" autocomplete="off" spellcheck="false" placeholder="Type message and press Enter. Commands: /exit /reload /nick <name>" />
+      </form>
+
+      <div id="status" class="status" aria-live="polite"></div>
+    </main>
+
+    <div id="modMenu" class="mod-menu" hidden>
+      <div class="mod-title">MODERATION PANEL</div>
+      <div class="mod-item">Message ID: <span id="modMessageId">-</span></div>
+      <div class="mod-item">User ID: <span id="modUserId">-</span></div>
+      <button data-action="delete">Delete Message</button>
+      <button data-action="mute">Mute User</button>
+      <button data-action="ban">Ban User</button>
+      <button data-action="close">Close</button>
+    </div>
+  </div>
+
+  <script src="./assets/chat-relay.js"></script>
 </body>
 </html>
