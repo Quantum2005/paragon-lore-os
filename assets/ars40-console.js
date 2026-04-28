@@ -131,6 +131,7 @@
       addLine("  more <filename>     - Display first 25 lines.");
       addLine("  edit <filename>     - Open integrated text editor.");
       addLine("  touch <filename>    - Open read-only file viewer.");
+      addLine("  chat                - Open Interchat relay service page.");
       addLine("  create <filename>                    - Create local text file.");
       addLine("  create <filename> --link <url>       - Create external link file.");
       addLine("  errors              - List API error codes and meanings.");
@@ -560,6 +561,11 @@
 
       if (cmd === "create") {
         await runCreateCommand(args);
+        return;
+      }
+
+      if (cmd === "chat") {
+        window.location.href = "./chat.html";
         return;
       }
 
