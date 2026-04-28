@@ -244,6 +244,209 @@ const sha256Hex = async (value) => {
   return Array.from(new Uint8Array(digest)).map((n) => n.toString(16).padStart(2, "0")).join("");
 };
 
+
+const ROLE_WEIGHT = { standard: 0, editor: 1, administrator: 2, manager: 3 };
+
+const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").toLowerCase()] || 0) >= 2;
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_uid TEXT NOT NULL UNIQUE,
+      sender_user_id INTEGER,
+      sender_username TEXT NOT NULL,
+      sender_role TEXT NOT NULL DEFAULT 'standard',
+      content TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      channel TEXT NOT NULL DEFAULT 'global',
+      ip_hash TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY(sender_user_id) REFERENCES chat_users(user_id)
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS chat_moderation_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action_type TEXT NOT NULL,
+      target_user_id INTEGER,
+      target_username TEXT,
+      target_message_id INTEGER,
+      reason TEXT,
+      created_by TEXT NOT NULL,
+      created_by_role TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
+
+const cryptoRandomId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `msg-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+};
+
+const upsertChatUser = async (db, username, role) => {
+  await db.prepare(`
+    INSERT INTO chat_users (username, role, updated_at)
+    VALUES (?1, ?2, datetime('now'))
+    ON CONFLICT(username) DO UPDATE SET
+      role = excluded.role,
+      updated_at = datetime('now')
+  `).bind(username, role).run();
+
+  return db.prepare(`
+    SELECT user_id, username, role, status, muted_until, banned_at
+    FROM chat_users
+    WHERE username = ?1
+    LIMIT 1
+  `).bind(username).first();
+};
+
+const routeChatApi = async (request, env, pathname) => {
+  if (!env.chat_db) {
+    return json({ ok: false, message: "D1 binding chat_db is not configured." }, 500);
+  }
+
+  await ensureChatTables(env.chat_db);
+
+  if (request.method === "GET" && pathname === "/chat/api/messages") {
+    const url = new URL(request.url);
+    const limitRaw = Number(url.searchParams.get("limit") || 80);
+    const limit = Math.min(200, Math.max(10, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 80));
+
+    const rows = await env.chat_db.prepare(`
+      SELECT id, message_uid, sender_user_id, sender_username, sender_role, content, metadata_json, channel, created_at
+      FROM chat_messages
+      WHERE is_deleted = 0
+      ORDER BY id DESC
+      LIMIT ?1
+    `).bind(limit).all();
+
+    const messages = (rows.results || []).reverse().map((row) => ({
+      ...row,
+      metadata: (() => {
+        try { return JSON.parse(String(row.metadata_json || "{}")); } catch { return {}; }
+      })()
+    }));
+
+    return json({ ok: true, messages });
+  }
+
+  if (request.method === "POST" && pathname === "/chat/api/messages") {
+    const body = await parseBody(request);
+    const actor = getActor(request);
+    const actorRole = String(request.headers.get("x-ars40-role") || body?.senderRole || "standard").trim().toLowerCase();
+    const content = String(body?.content || "").trim();
+    if (!content || content.length > 2000) {
+      return json({ ok: false, message: "Message content must be between 1 and 2000 characters." }, 400);
+    }
+
+    const user = await upsertChatUser(env.chat_db, actor, actorRole);
+    if (String(user?.status || "active") === "banned" || user?.banned_at) {
+      return json({ ok: false, code: "E_CHAT_BANNED", message: "You are banned from chat." }, 403);
+    }
+    if (user?.muted_until) {
+      const mutedUntilMs = Date.parse(String(user.muted_until));
+      if (!Number.isNaN(mutedUntilMs) && mutedUntilMs > Date.now()) {
+        return json({ ok: false, code: "E_CHAT_MUTED", message: `Muted until ${user.muted_until}.` }, 403);
+      }
+    }
+
+    const messageUid = cryptoRandomId();
+    const metadata = JSON.stringify({ source: "ars40-chat", client: String(body?.client || "web") });
+
+    await env.chat_db.prepare(`
+      INSERT INTO chat_messages (message_uid, sender_user_id, sender_username, sender_role, content, metadata_json, channel, ip_hash)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+    `).bind(
+      messageUid,
+      user?.user_id || null,
+      actor,
+      actorRole,
+      content,
+      metadata,
+      String(body?.channel || "global"),
+      await sha256Hex(request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for") || "")
+    ).run();
+
+    return json({ ok: true, message_uid: messageUid });
+  }
+
+  if (request.method === "DELETE" && /^\/chat\/api\/messages\/\d+$/.test(pathname)) {
+    const role = String(request.headers.get("x-ars40-role") || "standard").trim().toLowerCase();
+    const actor = getActor(request);
+    if (!canModerateChat(role)) {
+      return json({ ok: false, message: "Administrator role or higher required." }, 403);
+    }
+
+    const id = Number(pathname.split("/").pop());
+    const found = await env.chat_db.prepare("SELECT id, sender_user_id, sender_username FROM chat_messages WHERE id = ?1 LIMIT 1").bind(id).first();
+    if (!found) {
+      return json({ ok: false, message: "Message not found." }, 404);
+    }
+
+    await env.chat_db.prepare("UPDATE chat_messages SET is_deleted = 1, updated_at = datetime('now') WHERE id = ?1").bind(id).run();
+    await env.chat_db.prepare(`
+      INSERT INTO chat_moderation_actions (action_type, target_user_id, target_username, target_message_id, reason, created_by, created_by_role)
+      VALUES ('delete', ?1, ?2, ?3, ?4, ?5, ?6)
+    `).bind(found.sender_user_id || null, found.sender_username, id, "manual delete", actor, role).run();
+
+    return json({ ok: true, deleted_message_id: id, target_user_id: found.sender_user_id, target_username: found.sender_username });
+  }
+
+  if (request.method === "POST" && pathname === "/chat/api/moderation") {
+    const role = String(request.headers.get("x-ars40-role") || "standard").trim().toLowerCase();
+    const actor = getActor(request);
+    if (!canModerateChat(role)) {
+      return json({ ok: false, message: "Administrator role or higher required." }, 403);
+    }
+
+    const body = await parseBody(request);
+    const action = String(body?.action || "").trim().toLowerCase();
+    const targetUserId = Number(body?.targetUserId);
+    const reason = String(body?.reason || "").slice(0, 500);
+    if (!["mute", "ban"].includes(action) || !Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return json({ ok: false, message: "Invalid moderation action payload." }, 400);
+    }
+
+    const target = await env.chat_db.prepare("SELECT user_id, username FROM chat_users WHERE user_id = ?1 LIMIT 1").bind(targetUserId).first();
+    if (!target) {
+      return json({ ok: false, message: "Target user not found." }, 404);
+    }
+
+    if (action === "mute") {
+      const minutes = Math.min(7 * 24 * 60, Math.max(1, Number(body?.muteMinutes) || 30));
+      await env.chat_db.prepare(`
+        UPDATE chat_users
+        SET muted_until = datetime('now', ?2), status = 'active', updated_at = datetime('now'), note = ?3
+        WHERE user_id = ?1
+      `).bind(targetUserId, `+${minutes} minutes`, reason || `Muted by ${actor}`).run();
+      await env.chat_db.prepare(`
+        INSERT INTO chat_moderation_actions (action_type, target_user_id, target_username, reason, created_by, created_by_role)
+        VALUES ('mute', ?1, ?2, ?3, ?4, ?5)
+      `).bind(target.user_id, target.username, reason || `Muted for ${minutes} minutes`, actor, role).run();
+      return json({ ok: true, action: "mute", target_user_id: target.user_id, target_username: target.username, mute_minutes: minutes });
+    }
+
+    await env.chat_db.prepare(`
+      UPDATE chat_users
+      SET status = 'banned', banned_at = datetime('now'), muted_until = NULL, updated_at = datetime('now'), note = ?2
+      WHERE user_id = ?1
+    `).bind(targetUserId, reason || `Banned by ${actor}`).run();
+    await env.chat_db.prepare(`
+      INSERT INTO chat_moderation_actions (action_type, target_user_id, target_username, reason, created_by, created_by_role)
+      VALUES ('ban', ?1, ?2, ?3, ?4, ?5)
+    `).bind(target.user_id, target.username, reason || "Banned", actor, role).run();
+
+    return json({ ok: true, action: "ban", target_user_id: target.user_id, target_username: target.username });
+  }
+
+  return json({ ok: false, message: "Unsupported chat route." }, 404);
+};
+
 const routeAuth = async (request, env, pathname) => {
   const arsDb = resolveArsDb(env);
   if (!arsDb) {
@@ -719,6 +922,9 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
       return routeApi(request, env, url.pathname);
+    }
+    if (url.pathname.startsWith("/chat/api/")) {
+      return routeChatApi(request, env, url.pathname);
     }
     if (url.pathname.startsWith("/auth/")) {
       return routeAuth(request, env, url.pathname);
