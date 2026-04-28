@@ -11,7 +11,7 @@
     <div class="noise" aria-hidden="true"></div>
     <main class="screen">
       <header class="topbar">
-        <div>INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
+        <div id="channelLabel">INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
         <div id="whoami"></div>
       </header>
 
@@ -30,10 +30,11 @@
 
       <form id="composer" class="composer">
         <span class="prompt">&gt;</span>
-        <input id="messageInput" type="text" maxlength="600" autocomplete="off" spellcheck="false" placeholder="Type message and press Enter. Commands: /exit /reload /nick <name>" />
+        <input id="messageInput" type="text" maxlength="600" autocomplete="off" spellcheck="false" placeholder="Type message. Commands: /join /msg /inbox /nick /reload /exit" />
       </form>
 
       <div id="status" class="status" aria-live="polite"></div>
+      <div id="inboxStatus" class="status inbox-status" aria-live="polite"></div>
     </main>
 
     <div id="modMenu" class="mod-menu" hidden>

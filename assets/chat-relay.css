@@ -141,6 +141,12 @@ html, body {
   color: var(--error);
 }
 
+.inbox-status {
+  color: var(--fg-dim);
+  min-height: 1.1em;
+  margin-top: -0.4rem;
+}
+
 .mod-menu {
   position: fixed;
   min-width: 260px;

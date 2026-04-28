@@ -1,25 +1,29 @@
 const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
 const CHAT_RETURN_URL = "./ars40-console.html";
-const CHAT_CHANNEL = "lobby";
 
 const chatBody = document.getElementById("chatBody");
 const whoami = document.getElementById("whoami");
+const channelLabel = document.getElementById("channelLabel");
 const form = document.getElementById("composer");
 const messageInput = document.getElementById("messageInput");
 const statusEl = document.getElementById("status");
+const inboxStatusEl = document.getElementById("inboxStatus");
 const modMenu = document.getElementById("modMenu");
 const modMessageId = document.getElementById("modMessageId");
 const modUserId = document.getElementById("modUserId");
 
 let activeBackendBase = "";
 let selectedMessage = null;
+let activeChannel = "lobby";
 let activeNickname = (sessionStorage.getItem("ars40:chatNick") || sessionStorage.getItem("ars40:user") || "GUEST").trim().toUpperCase().slice(0, 20);
 
 const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 const isModerator = role === "administrator" || role === "manager";
 
 const refreshIdentity = () => {
+  const channelTag = activeChannel.startsWith("@") ? `DM ${activeChannel}` : `#${activeChannel.toUpperCase()}`;
   whoami.textContent = `USER ${activeNickname} | ROLE ${role.toUpperCase()}${isModerator ? " | MODERATION ENABLED" : ""}`;
+  channelLabel.textContent = `INTERCHAT RELAY NETWORK // CHANNEL ${channelTag}`;
 };
 
 refreshIdentity();
@@ -52,6 +56,10 @@ const fetchWithBackendFallback = async (path, options = {}) => {
 const setStatus = (message, error = false) => {
   statusEl.textContent = message;
   statusEl.style.color = error ? "var(--error)" : "var(--fg)";
+};
+
+const setInboxStatus = (message) => {
+  inboxStatusEl.textContent = message;
 };
 
 const callChatApi = async (path, options = {}) => {
@@ -90,11 +98,24 @@ const fmtTime = (isoTime) => {
   return dt.toISOString().slice(11, 19);
 };
 
+const normalizeChannel = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "lobby";
+  if (raw.startsWith("@")) {
+    const peer = raw.slice(1).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 20);
+    return peer ? `@${peer}` : "lobby";
+  }
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
+};
+
 const buildVisibleLine = (message) => {
   const sender = String(message.sender || "UNKNOWN");
   const created = fmtTime(message.created_at);
   const content = String(message.content || "");
-  return `<${sender}> [${created}] ${content}`;
+  const channelTag = String(message.channel || "").toLowerCase() === "dm"
+    ? `DM:${message.recipient ? `@${String(message.recipient).toUpperCase()}` : "DIRECT"}`
+    : `#${String(message.channel || "lobby").toUpperCase()}`;
+  return `<${sender}> [${created}] ${channelTag} ${content}`;
 };
 
 const renderMessages = (messages) => {
@@ -139,12 +160,37 @@ const renderMessages = (messages) => {
 
 const loadMessages = async () => {
   try {
-    const payload = await callChatApi(`/chat/messages?limit=120&channel=${encodeURIComponent(CHAT_CHANNEL)}`, { method: "GET" });
+    const payload = await callChatApi(`/chat/messages?limit=120&channel=${encodeURIComponent(activeChannel)}`, { method: "GET" });
     renderMessages(payload.messages || []);
-    setStatus(`ONLINE // ${activeNickname} // ${CHAT_CHANNEL.toUpperCase()}`, false);
+    refreshIdentity();
+    setStatus(`ONLINE // ${activeNickname} // ${activeChannel.startsWith("@") ? activeChannel : `#${activeChannel.toUpperCase()}`}`, false);
   } catch (error) {
     setStatus(`LOAD FAILED: ${error.message}`, true);
   }
+};
+
+const loadInbox = async () => {
+  try {
+    const payload = await callChatApi("/chat/inbox?unread=1", { method: "GET" });
+    const unread = payload.inbox || [];
+    if (!unread.length) {
+      setInboxStatus("INBOX: 0 unread");
+      return;
+    }
+
+    setInboxStatus(`INBOX: ${unread.length} unread | latest from ${unread[0].sender} at ${fmtTime(unread[0].created_at)}`);
+  } catch {
+    setInboxStatus("INBOX: unavailable");
+  }
+};
+
+const markInboxRead = async (entries) => {
+  const messageUids = entries.map((row) => row.message_uid).filter(Boolean);
+  if (!messageUids.length) return;
+  await callChatApi("/chat/inbox/read", {
+    method: "POST",
+    body: JSON.stringify({ messageUids })
+  });
 };
 
 const runCommand = async (rawInput) => {
@@ -161,6 +207,7 @@ const runCommand = async (rawInput) => {
 
   if (command === "reload") {
     await loadMessages();
+    await loadInbox();
     return true;
   }
 
@@ -175,6 +222,42 @@ const runCommand = async (rawInput) => {
     sessionStorage.setItem("ars40:chatNick", activeNickname);
     refreshIdentity();
     setStatus(`NICK CHANGED TO ${activeNickname}`, false);
+    await loadMessages();
+    return true;
+  }
+
+  if (command === "join") {
+    const nextChannel = normalizeChannel(args.join(" "));
+    activeChannel = nextChannel;
+    refreshIdentity();
+    await loadMessages();
+    return true;
+  }
+
+  if (command === "msg") {
+    const target = normalizeChannel(`@${args[0] || ""}`);
+    const messageText = args.slice(1).join(" ").trim();
+    if (!target.startsWith("@") || !messageText) {
+      setStatus("USAGE: /msg <user> <message>", true);
+      return true;
+    }
+
+    await sendMessage(messageText, target);
+    return true;
+  }
+
+  if (command === "inbox") {
+    const payload = await callChatApi("/chat/inbox?unread=1", { method: "GET" });
+    const entries = payload.inbox || [];
+    if (!entries.length) {
+      setStatus("INBOX EMPTY", false);
+      return true;
+    }
+
+    const preview = entries.slice(0, 5).map((row) => `<${row.sender}> [${fmtTime(row.created_at)}] ${row.content}`).join(" | ");
+    setStatus(`INBOX ${entries.length}: ${preview}`, false);
+    await markInboxRead(entries);
+    await loadInbox();
     return true;
   }
 
@@ -182,14 +265,16 @@ const runCommand = async (rawInput) => {
   return true;
 };
 
-const sendMessage = async (content) => {
+const sendMessage = async (content, overrideChannel = null) => {
   try {
+    const channel = overrideChannel || activeChannel;
     await callChatApi("/chat/messages", {
       method: "POST",
-      body: JSON.stringify({ content, channel: CHAT_CHANNEL })
+      body: JSON.stringify({ content, channel })
     });
-    setStatus("MESSAGE SENT", false);
+    setStatus(`MESSAGE SENT ${channel.startsWith("@") ? channel : `#${channel.toUpperCase()}`}`, false);
     await loadMessages();
+    await loadInbox();
   } catch (error) {
     setStatus(`SEND FAILED: ${error.message}`, true);
   }
@@ -243,6 +328,7 @@ modMenu.addEventListener("click", async (event) => {
     setStatus(`ACTION COMPLETE: ${action.toUpperCase()}`, false);
     modMenu.hidden = true;
     await loadMessages();
+    await loadInbox();
   } catch (error) {
     setStatus(`ACTION FAILED: ${error.message}`, true);
     modMenu.hidden = true;
@@ -263,6 +349,8 @@ window.addEventListener("keydown", (event) => {
 
 setInterval(() => {
   void loadMessages();
-}, 5000);
+  void loadInbox();
+}, 7000);
 
 void loadMessages();
+void loadInbox();

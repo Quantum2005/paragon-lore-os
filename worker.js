@@ -20,7 +20,8 @@ const ERROR_CODES = {
   CHAT_BANNED: "E_CHAT_BANNED",
   CHAT_PERMISSION_DENIED: "E_CHAT_PERMISSION_DENIED",
   CHAT_MESSAGE_NOT_FOUND: "E_CHAT_MESSAGE_NOT_FOUND",
-  CHAT_INVALID_ACTION: "E_CHAT_INVALID_ACTION"
+  CHAT_INVALID_ACTION: "E_CHAT_INVALID_ACTION",
+  CHAT_INVALID_CHANNEL: "E_CHAT_INVALID_CHANNEL"
 };
 
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
@@ -611,6 +612,7 @@ const ensureChatTables = async (database) => {
       sender_account_id INTEGER,
       sender_role_snapshot TEXT NOT NULL DEFAULT 'standard',
       channel TEXT NOT NULL DEFAULT 'lobby',
+      recipient TEXT,
       content TEXT NOT NULL,
       metadata_json TEXT,
       is_deleted INTEGER NOT NULL DEFAULT 0,
@@ -642,6 +644,18 @@ const ensureChatTables = async (database) => {
   `).run();
 
   await database.prepare(`
+    CREATE TABLE IF NOT EXISTS relay_inbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      message_uid TEXT NOT NULL,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      read_at TEXT,
+      UNIQUE(username, message_uid)
+    )
+  `).run();
+
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS relay_moderation_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
@@ -653,6 +667,7 @@ const ensureChatTables = async (database) => {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+  await database.prepare("ALTER TABLE relay_messages ADD COLUMN recipient TEXT").run().catch(() => {});
 };
 
 const requireModerator = (request) => {
@@ -673,18 +688,36 @@ const routeChat = async (request, env, pathname) => {
   if (request.method === "GET" && pathname === "/chat/messages") {
     const url = new URL(request.url);
     const limit = Math.max(1, Math.min(250, Number(url.searchParams.get("limit") || 80)));
-    const channel = String(url.searchParams.get("channel") || "lobby").trim().toLowerCase().slice(0, 40) || "lobby";
+    const actor = getActor(request);
+    const requestedChannel = String(url.searchParams.get("channel") || "lobby").trim();
+    const dmPeer = requestedChannel.startsWith("@")
+      ? requestedChannel.slice(1).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 20)
+      : "";
 
-    const rows = await env.chat_db.prepare(`
-      SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, content, metadata_json, created_at
-      FROM relay_messages
-      WHERE is_deleted = 0 AND channel = ?1
-      ORDER BY id DESC
-      LIMIT ?2
-    `).bind(channel, limit).all();
+    let rows;
+    if (dmPeer) {
+      rows = await env.chat_db.prepare(`
+        SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, recipient, content, metadata_json, created_at
+        FROM relay_messages
+        WHERE is_deleted = 0
+          AND channel = 'dm'
+          AND ((sender = ?1 AND recipient = ?2) OR (sender = ?2 AND recipient = ?1))
+        ORDER BY id DESC
+        LIMIT ?3
+      `).bind(actor, dmPeer, limit).all();
+    } else {
+      const channel = requestedChannel.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
+      rows = await env.chat_db.prepare(`
+        SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, recipient, content, metadata_json, created_at
+        FROM relay_messages
+        WHERE is_deleted = 0 AND channel = ?1
+        ORDER BY id DESC
+        LIMIT ?2
+      `).bind(channel, limit).all();
+    }
 
     const messages = (rows.results || []).reverse();
-    return json({ ok: true, channel, messages });
+    return json({ ok: true, channel: dmPeer ? `@${dmPeer}` : requestedChannel || "lobby", messages });
   }
 
   if (request.method === "POST" && pathname === "/chat/messages") {
@@ -696,8 +729,18 @@ const routeChat = async (request, env, pathname) => {
     const sender = getActor(request);
     const senderRole = getRole(request);
     const content = String(body.content || "").trim();
-    const channel = String(body.channel || "lobby").trim().toLowerCase().slice(0, 40) || "lobby";
+    const requestedChannel = String(body.channel || "lobby").trim();
+    const dmPeer = requestedChannel.startsWith("@")
+      ? requestedChannel.slice(1).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 20)
+      : "";
+    const channel = dmPeer ? "dm" : requestedChannel.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
     const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
+    const mentionUsers = Array.from(new Set((content.match(/@([A-Z0-9_-]{3,20})/gi) || [])
+      .map((part) => part.slice(1).toUpperCase())));
+
+    if (!channel) {
+      return json({ ok: false, code: ERROR_CODES.CHAT_INVALID_CHANNEL, message: "Invalid channel." }, 400);
+    }
 
     if (!content) {
       return json({ ok: false, code: ERROR_CODES.CHAT_EMPTY_MESSAGE, message: "Message content is required." }, 400);
@@ -723,11 +766,55 @@ const routeChat = async (request, env, pathname) => {
 
     const messageUid = crypto.randomUUID();
     await env.chat_db.prepare(`
-      INSERT INTO relay_messages (message_uid, sender, sender_role_snapshot, channel, content, metadata_json)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-    `).bind(messageUid, sender, senderRole, channel, content, metadata ? JSON.stringify(metadata) : null).run();
+      INSERT INTO relay_messages (message_uid, sender, sender_role_snapshot, channel, recipient, content, metadata_json)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `).bind(messageUid, sender, senderRole, channel, dmPeer || null, content, metadata ? JSON.stringify(metadata) : null).run();
+
+    const inboxTargets = new Set([...mentionUsers, ...(dmPeer ? [dmPeer] : [])]);
+    inboxTargets.delete(sender);
+    for (const target of inboxTargets) {
+      await env.chat_db.prepare(`
+        INSERT INTO relay_inbox (username, message_uid, is_read)
+        VALUES (?1, ?2, 0)
+        ON CONFLICT(username, message_uid) DO NOTHING
+      `).bind(target, messageUid).run();
+    }
 
     return json({ ok: true, message_uid: messageUid });
+  }
+
+  if (request.method === "GET" && pathname === "/chat/inbox") {
+    const actor = getActor(request);
+    const url = new URL(request.url);
+    const unreadOnly = String(url.searchParams.get("unread") || "1") !== "0";
+    const rows = await env.chat_db.prepare(`
+      SELECT i.message_uid, i.is_read, i.created_at AS inbox_created_at, m.sender, m.recipient, m.channel, m.content, m.created_at
+      FROM relay_inbox i
+      JOIN relay_messages m ON m.message_uid = i.message_uid
+      WHERE i.username = ?1 AND m.is_deleted = 0 AND (?2 = 0 OR i.is_read = 0)
+      ORDER BY i.created_at DESC
+      LIMIT 250
+    `).bind(actor, unreadOnly ? 1 : 0).all();
+
+    return json({ ok: true, inbox: rows.results || [] });
+  }
+
+  if (request.method === "POST" && pathname === "/chat/inbox/read") {
+    const actor = getActor(request);
+    const body = await parseBody(request);
+    const messageUids = Array.isArray(body?.messageUids) ? body.messageUids : [];
+    if (!messageUids.length) {
+      return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "messageUids array is required." }, 400);
+    }
+
+    for (const uid of messageUids.slice(0, 250)) {
+      await env.chat_db.prepare(`
+        UPDATE relay_inbox
+        SET is_read = 1, read_at = datetime('now')
+        WHERE username = ?1 AND message_uid = ?2
+      `).bind(actor, String(uid)).run();
+    }
+    return json({ ok: true, count: messageUids.length });
   }
 
   if (request.method === "POST" && pathname === "/chat/moderation") {

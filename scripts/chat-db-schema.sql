@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS relay_messages (
   sender_account_id INTEGER,
   sender_role_snapshot TEXT NOT NULL DEFAULT 'standard',
   channel TEXT NOT NULL DEFAULT 'lobby',
+  recipient TEXT,
   content TEXT NOT NULL,
   metadata_json TEXT,
   is_deleted INTEGER NOT NULL DEFAULT 0,
@@ -41,4 +42,14 @@ CREATE TABLE IF NOT EXISTS relay_moderation_log (
   target_message_uid TEXT,
   details_json TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS relay_inbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL,
+  message_uid TEXT NOT NULL,
+  is_read INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  read_at TEXT,
+  UNIQUE(username, message_uid)
 );
