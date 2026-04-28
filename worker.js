@@ -1,7 +1,7 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,x-ars40-user"
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,x-ars40-user,x-ars40-role"
 };
 
 const ERROR_CODES = {
@@ -13,7 +13,14 @@ const ERROR_CODES = {
   EXTERNAL_READONLY: "E_EXTERNAL_READONLY",
   FILE_LOCKED: "E_FILE_LOCKED",
   BAD_JSON: "E_BAD_JSON",
-  UNSUPPORTED_ROUTE: "E_UNSUPPORTED_ROUTE"
+  UNSUPPORTED_ROUTE: "E_UNSUPPORTED_ROUTE",
+  CHAT_BINDING_MISSING: "E_CHAT_BINDING_MISSING",
+  CHAT_EMPTY_MESSAGE: "E_CHAT_EMPTY_MESSAGE",
+  CHAT_MUTED: "E_CHAT_MUTED",
+  CHAT_BANNED: "E_CHAT_BANNED",
+  CHAT_PERMISSION_DENIED: "E_CHAT_PERMISSION_DENIED",
+  CHAT_MESSAGE_NOT_FOUND: "E_CHAT_MESSAGE_NOT_FOUND",
+  CHAT_INVALID_ACTION: "E_CHAT_INVALID_ACTION"
 };
 
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
@@ -380,6 +387,236 @@ const routeAuth = async (request, env, pathname) => {
   return json({ ok: false, message: "Unsupported auth route." }, 404);
 };
 
+const CHAT_ROLE_LEVELS = {
+  standard: 0,
+  editor: 1,
+  administrator: 2,
+  manager: 3
+};
+
+const getRole = (request) => {
+  const raw = String(request.headers.get("x-ars40-role") || "standard").trim().toLowerCase();
+  return raw in CHAT_ROLE_LEVELS ? raw : "standard";
+};
+
+const ensureChatTables = async (db) => {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS relay_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_uid TEXT NOT NULL UNIQUE,
+      sender TEXT NOT NULL,
+      sender_account_id INTEGER,
+      sender_role_snapshot TEXT NOT NULL DEFAULT 'standard',
+      channel TEXT NOT NULL DEFAULT 'lobby',
+      content TEXT NOT NULL,
+      metadata_json TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      deleted_reason TEXT,
+      deleted_at TEXT,
+      deleted_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS relay_user_flags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      is_muted INTEGER NOT NULL DEFAULT 0,
+      muted_reason TEXT,
+      muted_by TEXT,
+      muted_at TEXT,
+      mute_expires_at TEXT,
+      is_banned INTEGER NOT NULL DEFAULT 0,
+      banned_reason TEXT,
+      banned_by TEXT,
+      banned_at TEXT,
+      ban_expires_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS relay_moderation_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      actor_role TEXT NOT NULL,
+      target_username TEXT,
+      target_message_uid TEXT,
+      details_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
+};
+
+const requireModerator = (request) => {
+  const role = getRole(request);
+  if ((CHAT_ROLE_LEVELS[role] || 0) < CHAT_ROLE_LEVELS.administrator) {
+    return false;
+  }
+  return true;
+};
+
+const routeChat = async (request, env, pathname) => {
+  if (!env.chat_db) {
+    return json({ ok: false, code: ERROR_CODES.CHAT_BINDING_MISSING, message: "D1 binding chat_db is not configured." }, 500);
+  }
+
+  await ensureChatTables(env.chat_db);
+
+  if (request.method === "GET" && pathname === "/chat/messages") {
+    const url = new URL(request.url);
+    const limit = Math.max(1, Math.min(250, Number(url.searchParams.get("limit") || 80)));
+    const channel = String(url.searchParams.get("channel") || "lobby").trim().toLowerCase().slice(0, 40) || "lobby";
+
+    const rows = await env.chat_db.prepare(`
+      SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, content, metadata_json, created_at
+      FROM relay_messages
+      WHERE is_deleted = 0 AND channel = ?1
+      ORDER BY id DESC
+      LIMIT ?2
+    `).bind(channel, limit).all();
+
+    const messages = (rows.results || []).reverse();
+    return json({ ok: true, channel, messages });
+  }
+
+  if (request.method === "POST" && pathname === "/chat/messages") {
+    const body = await parseBody(request);
+    if (!body) {
+      return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Malformed JSON payload." }, 400);
+    }
+
+    const sender = getActor(request);
+    const senderRole = getRole(request);
+    const content = String(body.content || "").trim();
+    const channel = String(body.channel || "lobby").trim().toLowerCase().slice(0, 40) || "lobby";
+    const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
+
+    if (!content) {
+      return json({ ok: false, code: ERROR_CODES.CHAT_EMPTY_MESSAGE, message: "Message content is required." }, 400);
+    }
+
+    const flags = await env.chat_db.prepare(`
+      SELECT is_muted, mute_expires_at, is_banned, ban_expires_at
+      FROM relay_user_flags
+      WHERE username = ?1
+      LIMIT 1
+    `).bind(sender).first();
+
+    const nowIso = new Date().toISOString();
+    const isMuted = Number(flags?.is_muted || 0) === 1 && (!flags?.mute_expires_at || String(flags.mute_expires_at) > nowIso);
+    const isBanned = Number(flags?.is_banned || 0) === 1 && (!flags?.ban_expires_at || String(flags.ban_expires_at) > nowIso);
+
+    if (isBanned) {
+      return json({ ok: false, code: ERROR_CODES.CHAT_BANNED, message: "This account is banned from Relay." }, 403);
+    }
+    if (isMuted) {
+      return json({ ok: false, code: ERROR_CODES.CHAT_MUTED, message: "This account is muted." }, 403);
+    }
+
+    const messageUid = crypto.randomUUID();
+    await env.chat_db.prepare(`
+      INSERT INTO relay_messages (message_uid, sender, sender_role_snapshot, channel, content, metadata_json)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+    `).bind(messageUid, sender, senderRole, channel, content, metadata ? JSON.stringify(metadata) : null).run();
+
+    return json({ ok: true, message_uid: messageUid });
+  }
+
+  if (request.method === "POST" && pathname === "/chat/moderation") {
+    if (!requireModerator(request)) {
+      return json({ ok: false, code: ERROR_CODES.CHAT_PERMISSION_DENIED, message: "Administrator rank or higher required." }, 403);
+    }
+
+    const body = await parseBody(request);
+    if (!body) {
+      return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Malformed JSON payload." }, 400);
+    }
+
+    const action = String(body.action || "").trim().toLowerCase();
+    const actor = getActor(request);
+    const actorRole = getRole(request);
+    const reason = String(body.reason || "").trim().slice(0, 280) || null;
+
+    if (action === "delete") {
+      const messageUid = String(body.messageUid || "").trim();
+      if (!messageUid) {
+        return json({ ok: false, code: ERROR_CODES.CHAT_MESSAGE_NOT_FOUND, message: "Message ID is required." }, 400);
+      }
+
+      const existing = await env.chat_db.prepare(`
+        SELECT message_uid
+        FROM relay_messages
+        WHERE message_uid = ?1 AND is_deleted = 0
+        LIMIT 1
+      `).bind(messageUid).first();
+
+      if (!existing) {
+        return json({ ok: false, code: ERROR_CODES.CHAT_MESSAGE_NOT_FOUND, message: "Message not found." }, 404);
+      }
+
+      await env.chat_db.prepare(`
+        UPDATE relay_messages
+        SET is_deleted = 1, deleted_reason = ?2, deleted_at = datetime('now'), deleted_by = ?3, updated_at = datetime('now')
+        WHERE message_uid = ?1
+      `).bind(messageUid, reason, actor).run();
+
+      await env.chat_db.prepare(`
+        INSERT INTO relay_moderation_log (action, actor, actor_role, target_message_uid, details_json)
+        VALUES ('delete', ?1, ?2, ?3, ?4)
+      `).bind(actor, actorRole, messageUid, JSON.stringify({ reason })).run();
+
+      return json({ ok: true, action: "delete", message_uid: messageUid });
+    }
+
+    if (action === "mute" || action === "ban") {
+      const targetUsername = String(body.targetUsername || "").trim().toUpperCase();
+      if (!targetUsername) {
+        return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Target username is required." }, 400);
+      }
+
+      if (action === "mute") {
+        await env.chat_db.prepare(`
+          INSERT INTO relay_user_flags (username, is_muted, muted_reason, muted_by, muted_at, updated_at)
+          VALUES (?1, 1, ?2, ?3, datetime('now'), datetime('now'))
+          ON CONFLICT(username) DO UPDATE SET
+            is_muted = 1,
+            muted_reason = excluded.muted_reason,
+            muted_by = excluded.muted_by,
+            muted_at = datetime('now'),
+            updated_at = datetime('now')
+        `).bind(targetUsername, reason, actor).run();
+      } else {
+        await env.chat_db.prepare(`
+          INSERT INTO relay_user_flags (username, is_banned, banned_reason, banned_by, banned_at, updated_at)
+          VALUES (?1, 1, ?2, ?3, datetime('now'), datetime('now'))
+          ON CONFLICT(username) DO UPDATE SET
+            is_banned = 1,
+            banned_reason = excluded.banned_reason,
+            banned_by = excluded.banned_by,
+            banned_at = datetime('now'),
+            updated_at = datetime('now')
+        `).bind(targetUsername, reason, actor).run();
+      }
+
+      await env.chat_db.prepare(`
+        INSERT INTO relay_moderation_log (action, actor, actor_role, target_username, details_json)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+      `).bind(action, actor, actorRole, targetUsername, JSON.stringify({ reason })).run();
+
+      return json({ ok: true, action, username: targetUsername });
+    }
+
+    return json({ ok: false, code: ERROR_CODES.CHAT_INVALID_ACTION, message: "Unknown moderation action." }, 400);
+  }
+
+  return json({ ok: false, code: ERROR_CODES.UNSUPPORTED_ROUTE, message: "Unsupported chat route." }, 404);
+};
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -392,6 +629,9 @@ export default {
     }
     if (url.pathname.startsWith("/auth/")) {
       return routeAuth(request, env, url.pathname);
+    }
+    if (url.pathname.startsWith("/chat/")) {
+      return routeChat(request, env, url.pathname);
     }
 
     if (env.ASSETS?.fetch) {
