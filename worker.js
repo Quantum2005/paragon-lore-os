@@ -265,21 +265,6 @@ const ROLE_WEIGHT = { standard: 0, editor: 1, administrator: 2, manager: 3 };
 
 const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").toLowerCase()] || 0) >= 2;
 
-const ensureChatTables = async (db) => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS chat_users (
-      user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL UNIQUE,
-      role TEXT NOT NULL DEFAULT 'standard',
-      status TEXT NOT NULL DEFAULT 'active',
-      muted_until TEXT,
-      banned_at TEXT,
-      note TEXT,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `).run();
-
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS chat_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
