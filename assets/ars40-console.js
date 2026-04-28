@@ -9,6 +9,7 @@
     const LOGIN_URL = "./crt-console.html?resume=1";
     const EDITOR_URL = "./editor.html";
     const TOUCH_VIEWER_URL = "./touch-viewer.html";
+    const RELAY_CHAT_URL = "./chat-relay.html";
     const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
     const ACCOUNTS_API_URL = "/auth";
     const FILES_API_URL = "/api";
@@ -134,6 +135,7 @@
       addLine("  chat                - Open Interchat relay service page.");
       addLine("  create <filename>                    - Create local text file.");
       addLine("  create <filename> --link <url>       - Create external link file.");
+      addLine("  relay  - Open Interchat Relay service page.");
       addLine("  errors              - List API error codes and meanings.");
       if (activeRole === "administrator" || activeRole === "manager") {
         addLine("  goto <url> - Navigate to a specified URL (administrator/manager).");
@@ -571,6 +573,12 @@
 
       if (cmd === "errors") {
         printErrorCodes();
+        return;
+      }
+
+      if (cmd === "relay") {
+        addLine(`OPENING RELAY: ${RELAY_CHAT_URL}`);
+        window.location.href = RELAY_CHAT_URL;
         return;
       }
 
