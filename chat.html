@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relay Chat Service</title>
+  <link rel="stylesheet" href="./assets/chat.css" />
+</head>
+<body>
+  <main class="crt">
+    <div class="noise"></div>
+    <section class="panel">
+      <header class="banner">
+        <h1>INTERCHAT RELAY</h1>
+        <div id="sessionLabel" class="session"></div>
+      </header>
+
+      <section class="composer">
+        <label for="messageInput">/SAY</label>
+        <input id="messageInput" type="text" maxlength="2000" autocomplete="off" placeholder="Type message and press Enter" />
+        <button id="sendBtn" type="button">SEND</button>
+      </section>
+
+      <section class="table-wrap">
+        <table class="chat-table" aria-label="Chat messages">
+          <thead>
+            <tr>
+              <th>MSG ID</th>
+              <th>USER ID</th>
+              <th>SENDER</th>
+              <th>TIME (UTC)</th>
+              <th>MESSAGE</th>
+            </tr>
+          </thead>
+          <tbody id="chatRows"></tbody>
+        </table>
+      </section>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <menu id="moderationMenu" class="mod-menu" hidden>
+      <li><button id="menuDelete" type="button">Delete Message</button></li>
+      <li><button id="menuMute" type="button">Mute User</button></li>
+      <li><button id="menuBan" type="button">Ban User</button></li>
+      <li class="meta" id="menuMeta">message_id: - user_id: -</li>
+    </menu>
+  </main>
+
+  <script src="./assets/chat.js" type="module"></script>
+</body>
+</html>
