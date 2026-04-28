@@ -32,6 +32,9 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   }
 });
 
+const resolveArsDb = (env) => env?.ars40_db || env?.ARS40_DB || env?.db || null;
+const resolveChatDb = (env) => env?.chat_db || env?.CHAT_DB || env?.db || null;
+
 const ensureFileTable = async (database) => {
   await database.prepare(`
     CREATE TABLE IF NOT EXISTS files (
@@ -81,15 +84,16 @@ const normalizeUrl = (value) => {
 };
 
 const routeApi = async (request, env, pathname) => {
-  if (!env.ars40_db) {
+  const arsDb = resolveArsDb(env);
+  if (!arsDb) {
     return json({ ok: false, code: ERROR_CODES.BINDING_MISSING, message: "D1 binding ars40_db is not configured." }, 500);
   }
 
-  await ensureFileTable(env.ars40_db);
-  await ensureDemoFiles(env.ars40_db);
+  await ensureFileTable(arsDb);
+  await ensureDemoFiles(arsDb);
 
   if (request.method === "GET" && pathname === "/api/files") {
-    const rows = await env.ars40_db.prepare(`
+    const rows = await arsDb.prepare(`
       SELECT filename, is_external, external_url, is_locked, updated_at
       FROM files
       ORDER BY filename COLLATE NOCASE ASC
@@ -107,7 +111,7 @@ const routeApi = async (request, env, pathname) => {
       return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Invalid filename." }, 400);
     }
 
-    const record = await env.ars40_db.prepare(`
+    const record = await arsDb.prepare(`
       SELECT filename, content, is_external, external_url, is_locked, lock_password, updated_at, updated_by
       FROM files
       WHERE filename = ?1
@@ -144,7 +148,7 @@ const routeApi = async (request, env, pathname) => {
       return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Filename must be 1-80 chars: a-z, A-Z, 0-9, dot, dash, underscore." }, 400);
     }
 
-    const exists = await env.ars40_db.prepare("SELECT id FROM files WHERE filename = ?1").bind(filename).first();
+    const exists = await arsDb.prepare("SELECT id FROM files WHERE filename = ?1").bind(filename).first();
     if (exists) {
       return json({ ok: false, code: ERROR_CODES.FILE_EXISTS, message: "File already exists." }, 409);
     }
@@ -155,7 +159,7 @@ const routeApi = async (request, env, pathname) => {
         return json({ ok: false, code: ERROR_CODES.INVALID_EXTERNAL_URL, message: "A valid external URL is required for external mode." }, 400);
       }
 
-      await env.ars40_db.prepare(`
+      await arsDb.prepare(`
         INSERT INTO files (filename, content, is_external, external_url, is_locked, lock_password, created_by, updated_by)
         VALUES (?1, '', 1, ?2, ?3, ?4, ?5, ?5)
       `).bind(filename, externalUrl, lockEnabled ? 1 : 0, lockEnabled ? lockPassword : null, actor).run();
@@ -164,7 +168,7 @@ const routeApi = async (request, env, pathname) => {
     }
 
     const content = String(body.content || "");
-    await env.ars40_db.prepare(`
+    await arsDb.prepare(`
       INSERT INTO files (filename, content, is_external, external_url, is_locked, lock_password, created_by, updated_by)
       VALUES (?1, ?2, 0, NULL, ?3, ?4, ?5, ?5)
     `).bind(filename, content, lockEnabled ? 1 : 0, lockEnabled ? lockPassword : null, actor).run();
@@ -183,7 +187,7 @@ const routeApi = async (request, env, pathname) => {
       return json({ ok: false, code: ERROR_CODES.INVALID_FILENAME, message: "Invalid filename." }, 400);
     }
 
-    const existing = await env.ars40_db.prepare(`
+    const existing = await arsDb.prepare(`
       SELECT filename, is_external, is_locked, lock_password
       FROM files
       WHERE filename = ?1
@@ -208,7 +212,7 @@ const routeApi = async (request, env, pathname) => {
     const content = String(body.content || "");
     const actor = getActor(request);
 
-    await env.ars40_db.prepare(`
+    await arsDb.prepare(`
       UPDATE files
       SET content = ?2, updated_by = ?3, updated_at = datetime('now')
       WHERE filename = ?1
@@ -444,16 +448,17 @@ const routeChatApi = async (request, env, pathname) => {
 };
 
 const routeAuth = async (request, env, pathname) => {
-  if (!env.ars40_db) {
+  const arsDb = resolveArsDb(env);
+  if (!arsDb) {
     return json({ ok: false, message: "D1 binding ars40_db is not configured." }, 500);
   }
 
-  await ensureAccountsTable(env.ars40_db);
+  await ensureAccountsTable(arsDb);
   const body = await parseBody(request);
 
   if (request.method === "GET" && pathname === "/auth/debug") {
-    const accountsCount = await env.ars40_db.prepare("SELECT COUNT(*) AS count FROM accounts").first();
-    const filesCount = await env.ars40_db.prepare("SELECT COUNT(*) AS count FROM files").first().catch(() => ({ count: null }));
+    const accountsCount = await arsDb.prepare("SELECT COUNT(*) AS count FROM accounts").first();
+    const filesCount = await arsDb.prepare("SELECT COUNT(*) AS count FROM files").first().catch(() => ({ count: null }));
     return json({
       ok: true,
       service: "auth-debug",
@@ -472,7 +477,7 @@ const routeAuth = async (request, env, pathname) => {
       return json({ ok: false, message: "Username and password are required." }, 400);
     }
 
-    const account = await env.ars40_db.prepare(`
+    const account = await arsDb.prepare(`
       SELECT id, username, password_hash, role, enabled
       FROM accounts
       WHERE username = ?1
@@ -508,7 +513,7 @@ const routeAuth = async (request, env, pathname) => {
     }
 
     try {
-      const insert = await env.ars40_db.prepare(`
+      const insert = await arsDb.prepare(`
         INSERT INTO accounts (username, password_hash, role, enabled)
         VALUES (?1, ?2, 'standard', 1)
       `).bind(username, password).run();
@@ -526,7 +531,7 @@ const routeAuth = async (request, env, pathname) => {
     }
 
     try {
-      const result = await env.ars40_db.prepare(`
+      const result = await arsDb.prepare(`
         UPDATE accounts
         SET username = ?2, updated_at = datetime('now')
         WHERE id = ?1
@@ -547,7 +552,7 @@ const routeAuth = async (request, env, pathname) => {
       return json({ ok: false, message: "Invalid id or password." }, 400);
     }
 
-    const result = await env.ars40_db.prepare(`
+    const result = await arsDb.prepare(`
       UPDATE accounts
       SET password_hash = ?2, updated_at = datetime('now')
       WHERE id = ?1
@@ -577,7 +582,7 @@ const routeAuth = async (request, env, pathname) => {
       return json({ ok: false, message: `Invalid role. ${actorRole} may only elevate to ${allowedRoles.join(", ")}.` }, 400);
     }
 
-    const result = await env.ars40_db.prepare(`
+    const result = await arsDb.prepare(`
       UPDATE accounts
       SET role = ?2, updated_at = datetime('now')
       WHERE id = ?1
@@ -679,11 +684,12 @@ const requireModerator = (request) => {
 };
 
 const routeChat = async (request, env, pathname) => {
-  if (!env.chat_db) {
+  const chatDb = resolveChatDb(env);
+  if (!chatDb) {
     return json({ ok: false, code: ERROR_CODES.CHAT_BINDING_MISSING, message: "D1 binding chat_db is not configured." }, 500);
   }
 
-  await ensureChatTables(env.chat_db);
+  await ensureChatTables(chatDb);
 
   if (request.method === "GET" && pathname === "/chat/messages") {
     const url = new URL(request.url);
@@ -696,7 +702,7 @@ const routeChat = async (request, env, pathname) => {
 
     let rows;
     if (dmPeer) {
-      rows = await env.chat_db.prepare(`
+      rows = await chatDb.prepare(`
         SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, recipient, content, metadata_json, created_at
         FROM relay_messages
         WHERE is_deleted = 0
@@ -707,7 +713,7 @@ const routeChat = async (request, env, pathname) => {
       `).bind(actor, dmPeer, limit).all();
     } else {
       const channel = requestedChannel.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
-      rows = await env.chat_db.prepare(`
+      rows = await chatDb.prepare(`
         SELECT id, message_uid, sender, sender_account_id, sender_role_snapshot, channel, recipient, content, metadata_json, created_at
         FROM relay_messages
         WHERE is_deleted = 0 AND channel = ?1
@@ -746,7 +752,7 @@ const routeChat = async (request, env, pathname) => {
       return json({ ok: false, code: ERROR_CODES.CHAT_EMPTY_MESSAGE, message: "Message content is required." }, 400);
     }
 
-    const flags = await env.chat_db.prepare(`
+    const flags = await chatDb.prepare(`
       SELECT is_muted, mute_expires_at, is_banned, ban_expires_at
       FROM relay_user_flags
       WHERE username = ?1
@@ -765,7 +771,7 @@ const routeChat = async (request, env, pathname) => {
     }
 
     const messageUid = crypto.randomUUID();
-    await env.chat_db.prepare(`
+    await chatDb.prepare(`
       INSERT INTO relay_messages (message_uid, sender, sender_role_snapshot, channel, recipient, content, metadata_json)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
     `).bind(messageUid, sender, senderRole, channel, dmPeer || null, content, metadata ? JSON.stringify(metadata) : null).run();
@@ -773,7 +779,7 @@ const routeChat = async (request, env, pathname) => {
     const inboxTargets = new Set([...mentionUsers, ...(dmPeer ? [dmPeer] : [])]);
     inboxTargets.delete(sender);
     for (const target of inboxTargets) {
-      await env.chat_db.prepare(`
+      await chatDb.prepare(`
         INSERT INTO relay_inbox (username, message_uid, is_read)
         VALUES (?1, ?2, 0)
         ON CONFLICT(username, message_uid) DO NOTHING
@@ -787,7 +793,7 @@ const routeChat = async (request, env, pathname) => {
     const actor = getActor(request);
     const url = new URL(request.url);
     const unreadOnly = String(url.searchParams.get("unread") || "1") !== "0";
-    const rows = await env.chat_db.prepare(`
+    const rows = await chatDb.prepare(`
       SELECT i.message_uid, i.is_read, i.created_at AS inbox_created_at, m.sender, m.recipient, m.channel, m.content, m.created_at
       FROM relay_inbox i
       JOIN relay_messages m ON m.message_uid = i.message_uid
@@ -808,7 +814,7 @@ const routeChat = async (request, env, pathname) => {
     }
 
     for (const uid of messageUids.slice(0, 250)) {
-      await env.chat_db.prepare(`
+      await chatDb.prepare(`
         UPDATE relay_inbox
         SET is_read = 1, read_at = datetime('now')
         WHERE username = ?1 AND message_uid = ?2
@@ -838,7 +844,7 @@ const routeChat = async (request, env, pathname) => {
         return json({ ok: false, code: ERROR_CODES.CHAT_MESSAGE_NOT_FOUND, message: "Message ID is required." }, 400);
       }
 
-      const existing = await env.chat_db.prepare(`
+      const existing = await chatDb.prepare(`
         SELECT message_uid
         FROM relay_messages
         WHERE message_uid = ?1 AND is_deleted = 0
@@ -849,13 +855,13 @@ const routeChat = async (request, env, pathname) => {
         return json({ ok: false, code: ERROR_CODES.CHAT_MESSAGE_NOT_FOUND, message: "Message not found." }, 404);
       }
 
-      await env.chat_db.prepare(`
+      await chatDb.prepare(`
         UPDATE relay_messages
         SET is_deleted = 1, deleted_reason = ?2, deleted_at = datetime('now'), deleted_by = ?3, updated_at = datetime('now')
         WHERE message_uid = ?1
       `).bind(messageUid, reason, actor).run();
 
-      await env.chat_db.prepare(`
+      await chatDb.prepare(`
         INSERT INTO relay_moderation_log (action, actor, actor_role, target_message_uid, details_json)
         VALUES ('delete', ?1, ?2, ?3, ?4)
       `).bind(actor, actorRole, messageUid, JSON.stringify({ reason })).run();
@@ -870,7 +876,7 @@ const routeChat = async (request, env, pathname) => {
       }
 
       if (action === "mute") {
-        await env.chat_db.prepare(`
+        await chatDb.prepare(`
           INSERT INTO relay_user_flags (username, is_muted, muted_reason, muted_by, muted_at, updated_at)
           VALUES (?1, 1, ?2, ?3, datetime('now'), datetime('now'))
           ON CONFLICT(username) DO UPDATE SET
@@ -881,7 +887,7 @@ const routeChat = async (request, env, pathname) => {
             updated_at = datetime('now')
         `).bind(targetUsername, reason, actor).run();
       } else {
-        await env.chat_db.prepare(`
+        await chatDb.prepare(`
           INSERT INTO relay_user_flags (username, is_banned, banned_reason, banned_by, banned_at, updated_at)
           VALUES (?1, 1, ?2, ?3, datetime('now'), datetime('now'))
           ON CONFLICT(username) DO UPDATE SET
@@ -893,7 +899,7 @@ const routeChat = async (request, env, pathname) => {
         `).bind(targetUsername, reason, actor).run();
       }
 
-      await env.chat_db.prepare(`
+      await chatDb.prepare(`
         INSERT INTO relay_moderation_log (action, actor, actor_role, target_username, details_json)
         VALUES (?1, ?2, ?3, ?4, ?5)
       `).bind(action, actor, actorRole, targetUsername, JSON.stringify({ reason })).run();
