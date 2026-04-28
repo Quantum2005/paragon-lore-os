@@ -14,6 +14,21 @@
       "binding": "ars40_db",
       "database_name": "ars40_db",
       "database_id": "3f97e0bf-ccfc-4b29-b5c4-9c55d24354e4"
+    },
+    {
+      "binding": "ARS40_DB",
+      "database_name": "ars40_db",
+      "database_id": "3f97e0bf-ccfc-4b29-b5c4-9c55d24354e4"
+    },
+    {
+      "binding": "chat_db",
+      "database_name": "relay_chat_db",
+      "database_id": "3a7fd8da-9307-4205-b0e0-fabc33ff8ad3"
+    },
+    {
+      "binding": "CHAT_DB",
+      "database_name": "relay_chat_db",
+      "database_id": "3a7fd8da-9307-4205-b0e0-fabc33ff8ad3"
     }
   ]
 }
