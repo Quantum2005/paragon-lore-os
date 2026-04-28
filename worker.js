@@ -296,7 +296,6 @@ const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
-};
 
 const cryptoRandomId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
