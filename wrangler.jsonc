@@ -18,7 +18,7 @@
     {
       "binding": "chat_db",
       "database_name": "relay_chat_db",
-      "database_id": "REPLACE_WITH_CHAT_DB_ID"
+      "database_id": "3a7fd8da-9307-4205-b0e0-fabc33ff8ad3"
     }
   ]
 }

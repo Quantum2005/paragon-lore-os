@@ -1,4 +1,7 @@
 const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
+const CHAT_RETURN_URL = "./ars40-console.html";
+const CHAT_CHANNEL = "lobby";
+
 const chatBody = document.getElementById("chatBody");
 const whoami = document.getElementById("whoami");
 const form = document.getElementById("composer");
@@ -10,12 +13,16 @@ const modUserId = document.getElementById("modUserId");
 
 let activeBackendBase = "";
 let selectedMessage = null;
+let activeNickname = (sessionStorage.getItem("ars40:chatNick") || sessionStorage.getItem("ars40:user") || "GUEST").trim().toUpperCase().slice(0, 20);
 
-const user = (sessionStorage.getItem("ars40:user") || "GUEST").toUpperCase();
 const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 const isModerator = role === "administrator" || role === "manager";
 
-whoami.textContent = `USER ${user} // ROLE ${role.toUpperCase()}`;
+const refreshIdentity = () => {
+  whoami.textContent = `USER ${activeNickname} | ROLE ${role.toUpperCase()}${isModerator ? " | MODERATION ENABLED" : ""}`;
+};
+
+refreshIdentity();
 
 const backendCandidates = () => {
   const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
@@ -26,15 +33,18 @@ const backendCandidates = () => {
 
 const fetchWithBackendFallback = async (path, options = {}) => {
   let lastResponse = null;
+
   for (const base of backendCandidates()) {
     const response = await fetch(`${base}${path}`, options).catch(() => null);
     if (!response) continue;
+
     lastResponse = response;
     if (response.status !== 404 && response.status !== 405) {
       activeBackendBase = base;
       return response;
     }
   }
+
   if (lastResponse) return lastResponse;
   throw new Error(`No reachable backend for ${path}`);
 };
@@ -45,19 +55,30 @@ const setStatus = (message, error = false) => {
 };
 
 const callChatApi = async (path, options = {}) => {
+  const headers = {
+    "x-ars40-user": activeNickname,
+    "x-ars40-role": role,
+    ...(options.headers || {})
+  };
+
+  if (options.body) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetchWithBackendFallback(path, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "x-ars40-user": user,
-      "x-ars40-role": role,
-      ...(options.headers || {})
-    }
+    headers
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : { message: await response.text().catch(() => "") };
+
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.message || `HTTP ${response.status}`);
+    const code = payload.code ? ` (${payload.code})` : "";
+    const message = payload.message || `HTTP ${response.status}`;
+    throw new Error(`${message}${code}`.trim());
   }
 
   return payload;
@@ -69,24 +90,34 @@ const fmtTime = (isoTime) => {
   return dt.toISOString().slice(11, 19);
 };
 
+const buildVisibleLine = (message) => {
+  const sender = String(message.sender || "UNKNOWN");
+  const created = fmtTime(message.created_at);
+  const content = String(message.content || "");
+  return `<${sender}> [${created}] ${content}`;
+};
+
 const renderMessages = (messages) => {
   chatBody.innerHTML = "";
 
   for (const message of messages) {
     const row = document.createElement("tr");
     row.className = "message-row";
-    row.dataset.messageUid = message.message_uid;
+    row.dataset.messageUid = String(message.message_uid || "");
     row.dataset.sender = String(message.sender || "");
 
-    const timeCell = document.createElement("td");
-    timeCell.textContent = fmtTime(message.created_at);
-    const idCell = document.createElement("td");
-    idCell.textContent = String(message.message_uid || "").slice(0, 8);
-    const senderCell = document.createElement("td");
-    senderCell.textContent = message.sender || "UNKNOWN";
-    const messageCell = document.createElement("td");
-    messageCell.textContent = message.content || "";
-    row.append(timeCell, idCell, senderCell, messageCell);
+    const hiddenSenderCell = document.createElement("td");
+    hiddenSenderCell.className = "meta-cell";
+    hiddenSenderCell.textContent = String(message.sender || "");
+
+    const hiddenTimeCell = document.createElement("td");
+    hiddenTimeCell.className = "meta-cell";
+    hiddenTimeCell.textContent = fmtTime(message.created_at);
+
+    const visibleCell = document.createElement("td");
+    visibleCell.textContent = buildVisibleLine(message);
+
+    row.append(hiddenSenderCell, hiddenTimeCell, visibleCell);
 
     if (isModerator) {
       row.addEventListener("contextmenu", (event) => {
@@ -108,29 +139,74 @@ const renderMessages = (messages) => {
 
 const loadMessages = async () => {
   try {
-    const payload = await callChatApi("/chat/messages?limit=120", { method: "GET" });
+    const payload = await callChatApi(`/chat/messages?limit=120&channel=${encodeURIComponent(CHAT_CHANNEL)}`, { method: "GET" });
     renderMessages(payload.messages || []);
+    setStatus(`ONLINE // ${activeNickname} // ${CHAT_CHANNEL.toUpperCase()}`, false);
   } catch (error) {
     setStatus(`LOAD FAILED: ${error.message}`, true);
   }
 };
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const content = messageInput.value.trim();
-  if (!content) return;
+const runCommand = async (rawInput) => {
+  const [cmd, ...args] = rawInput.slice(1).trim().split(/\s+/);
+  const command = String(cmd || "").toLowerCase();
 
+  if (command === "exit") {
+    setStatus("EXITING RELAY...", false);
+    setTimeout(() => {
+      window.location.href = CHAT_RETURN_URL;
+    }, 120);
+    return true;
+  }
+
+  if (command === "reload") {
+    await loadMessages();
+    return true;
+  }
+
+  if (command === "nick") {
+    const nextNickname = args.join(" ").trim().toUpperCase().slice(0, 20);
+    if (!nextNickname) {
+      setStatus("USAGE: /nick <new_name>", true);
+      return true;
+    }
+
+    activeNickname = nextNickname;
+    sessionStorage.setItem("ars40:chatNick", activeNickname);
+    refreshIdentity();
+    setStatus(`NICK CHANGED TO ${activeNickname}`, false);
+    return true;
+  }
+
+  setStatus(`UNKNOWN COMMAND: /${command || "?"}`, true);
+  return true;
+};
+
+const sendMessage = async (content) => {
   try {
     await callChatApi("/chat/messages", {
       method: "POST",
-      body: JSON.stringify({ content, channel: "lobby" })
+      body: JSON.stringify({ content, channel: CHAT_CHANNEL })
     });
-    messageInput.value = "";
     setStatus("MESSAGE SENT", false);
     await loadMessages();
   } catch (error) {
     setStatus(`SEND FAILED: ${error.message}`, true);
   }
+};
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = messageInput.value.trim();
+  if (!input) return;
+  messageInput.value = "";
+
+  if (input.startsWith("/")) {
+    await runCommand(input);
+    return;
+  }
+
+  await sendMessage(input);
 });
 
 modMenu.addEventListener("click", async (event) => {
