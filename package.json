@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "predeploy:check": "node scripts/predeploy-check.mjs",
+    "deploy:worker": "./scripts/deploy-worker.sh"
   },
   "dependencies": {
     "express": "^4.21.2"
