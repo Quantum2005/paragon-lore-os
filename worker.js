@@ -249,7 +249,8 @@ const ROLE_WEIGHT = { standard: 0, editor: 1, administrator: 2, manager: 3 };
 
 const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").toLowerCase()] || 0) >= 2;
 
-  await db.prepare(`
+const ensureChatApiTables = async (database) => {
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS chat_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       message_uid TEXT NOT NULL UNIQUE,
@@ -267,7 +268,7 @@ const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").
     )
   `).run();
 
-  await db.prepare(`
+  await database.prepare(`
     CREATE TABLE IF NOT EXISTS chat_moderation_actions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action_type TEXT NOT NULL,
@@ -280,6 +281,7 @@ const canModerateChat = (role) => Number(ROLE_WEIGHT[String(role || "standard").
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+};
 
 const cryptoRandomId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -288,8 +290,8 @@ const cryptoRandomId = () => {
   return `msg-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 };
 
-const upsertChatUser = async (db, username, role) => {
-  await db.prepare(`
+const upsertChatUser = async (database, username, role) => {
+  await database.prepare(`
     INSERT INTO chat_users (username, role, updated_at)
     VALUES (?1, ?2, datetime('now'))
     ON CONFLICT(username) DO UPDATE SET
@@ -297,7 +299,7 @@ const upsertChatUser = async (db, username, role) => {
       updated_at = datetime('now')
   `).bind(username, role).run();
 
-  return db.prepare(`
+  return database.prepare(`
     SELECT user_id, username, role, status, muted_until, banned_at
     FROM chat_users
     WHERE username = ?1
@@ -310,7 +312,7 @@ const routeChatApi = async (request, env, pathname) => {
     return json({ ok: false, message: "D1 binding chat_db is not configured." }, 500);
   }
 
-  await ensureChatTables(env.chat_db);
+  await ensureChatApiTables(env.chat_db);
 
   if (request.method === "GET" && pathname === "/chat/api/messages") {
     const url = new URL(request.url);
