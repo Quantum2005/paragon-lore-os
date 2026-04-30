@@ -154,7 +154,8 @@ const renderMessages = (messages) => {
     const mine = activeNickname.toUpperCase();
     const mentions = String(message.content||"").match(mentionRegex) || [];
     if (mentions.some((m) => { const t=m.slice(1).toUpperCase(); return t===mine || t==="EVERYONE" || (t==="LOCAL" && String(message.channel||"").toLowerCase()===String(activeChannel).replace("@", "dm")); })) { row.classList.add("mention-highlight"); }
-    row.classList.add(roleClass(message.sender_role_snapshot));
+    const senderRoleClass = roleClass(message.sender_role_snapshot);
+    if (senderRoleClass) row.classList.add(senderRoleClass);
     visibleCell.innerHTML = buildVisibleLine(message).replace(escapeHtml(String(message.content||"")), linkify(String(message.content||"")));
 
     row.append(hiddenSenderCell, hiddenTimeCell, visibleCell);
