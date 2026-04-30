@@ -292,8 +292,17 @@ const runCommand = async (rawInput) => {
   return true;
 };
 
-const BLOCKED_TERMS = ["slur1","slur2","adminhack"];
-const maskBlocked = (txt) => { let blocked=[]; let out=txt; for (const w of BLOCKED_TERMS){ const re=new RegExp(`\b${w}\b`,"gi"); if (re.test(out)){ blocked.push(w); out=out.replace(re, (m)=>"*".repeat(m.length)); } } return {out,blocked}; };
+let blockedTerms = [];
+const loadBlockedTerms = async () => {
+  try {
+    const res = await fetch("./assets/en.txt", { cache: "no-store" });
+    if (!res.ok) return;
+    const text = await res.text();
+    blockedTerms = text.split(/\r?\n/).map((v) => v.trim().toLowerCase()).filter(Boolean);
+  } catch {}
+};
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const maskBlocked = (txt) => { let blocked=[]; let out=txt; for (const w of blockedTerms){ const re=new RegExp(`\\b${escapeRegExp(w)}\\b`,"gi"); if (re.test(out)){ blocked.push(w); out=out.replace(re, (m)=>"*".repeat(m.length)); } } return {out,blocked}; };
 
 const sendMessage = async (content, overrideChannel = null) => {
   try {
@@ -384,6 +393,7 @@ setInterval(() => {
   void loadInbox();
 }, 7000);
 
+void loadBlockedTerms();
 void loadMessages();
 void loadInbox();
 

@@ -35,6 +35,20 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
 const resolveArsDb = (env) => env?.ars40_db || env?.ARS40_DB || env?.db || null;
 const resolveChatDb = (env) => env?.chat_db || env?.CHAT_DB || env?.db || null;
 
+let blockedTermsCache = { loadedAt: 0, terms: ["slur1", "slur2", "adminhack"] };
+const getBlockedTerms = async (env) => {
+  if (Date.now() - blockedTermsCache.loadedAt < 5 * 60 * 1000) return blockedTermsCache.terms;
+  try {
+    const assetResponse = await env.ASSETS.fetch(new Request("https://assets.local/assets/en.txt"));
+    if (assetResponse.ok) {
+      const text = await assetResponse.text();
+      const terms = text.split(/\r?\n/).map((v) => v.trim().toLowerCase()).filter(Boolean);
+      if (terms.length) blockedTermsCache = { loadedAt: Date.now(), terms };
+    }
+  } catch {}
+  return blockedTermsCache.terms;
+};
+
 const ensureFileTable = async (database) => {
   await database.prepare(`
     CREATE TABLE IF NOT EXISTS files (
@@ -754,7 +768,7 @@ const routeChat = async (request, env, pathname) => {
       : "";
     const channel = dmPeer ? "dm" : requestedChannel.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
     const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
-    const blockedTerms = ["slur1", "slur2", "adminhack"];
+    const blockedTerms = await getBlockedTerms(env);
     const mentionUsers = Array.from(new Set((content.match(/@([A-Z0-9_-]{3,20}|everyone|local)/gi) || [])
       .map((part) => part.slice(1).toUpperCase())));
 
