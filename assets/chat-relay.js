@@ -67,6 +67,16 @@ const setStatus = (message, error = false) => {
 };
 
 const showToast = (message) => { if (!toastEl) return; toastEl.textContent = message; toastEl.hidden = false; clearTimeout(showToast._t); showToast._t=setTimeout(()=>{toastEl.hidden=true;}, 2600); };
+const pushSystemMessage = (message, level = "info") => {
+  const row = document.createElement("tr");
+  row.className = `message-row system-message ${level}`;
+  const td = document.createElement("td");
+  td.colSpan = 3;
+  td.textContent = `[SYSTEM] ${message}`;
+  row.appendChild(td);
+  chatBody.appendChild(row);
+  chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
+};
 
 const setInboxStatus = (message) => {
   inboxStatusEl.textContent = message;
@@ -274,6 +284,11 @@ const runCommand = async (rawInput) => {
     return true;
   }
 
+  if (command === "help") {
+    setStatus("COMMANDS: /help /exit /reload /nick /join /msg /announce /ping /inbox", false);
+    return true;
+  }
+
   if (command === "inbox") {
     const payload = await callChatApi("/chat/inbox?unread=1", { method: "GET" });
     const entries = payload.inbox || [];
@@ -309,7 +324,7 @@ const sendMessage = async (content, overrideChannel = null) => {
   try {
     const channel = overrideChannel || activeChannel;
     const filtered = maskBlocked(content);
-    if (filtered.blocked.length) { showToast(`Blocked term(s): ${Array.from(new Set(filtered.blocked)).join(", ")}`); }
+    if (filtered.blocked.length) { pushSystemMessage("This content is not permitted", "warning"); }
     await callChatApi("/chat/messages", {
       method: "POST",
       body: JSON.stringify({ content: filtered.out, channel })

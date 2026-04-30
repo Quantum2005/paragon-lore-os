@@ -185,3 +185,6 @@ html, body {
 .role-system td{ color:#ffb347; }
 .mention-highlight{ background: rgba(255,255,120,0.18)!important; }
 .toast{ position:fixed; bottom:20px; right:20px; background:#1a0505; color:#ffb3b3; border:1px solid #ff7e7e; padding:.5rem .7rem; z-index:30;}
+
+.system-message td{ color:#d5d5d5; font-style:italic; }
+.system-message.warning td{ color:#ffb347; }
