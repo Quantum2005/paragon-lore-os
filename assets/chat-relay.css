@@ -179,3 +179,9 @@ html, body {
   from { transform: translate(0, 0); }
   to { transform: translate(-3px, 2px); }
 }
+
+.role-administrator td{ color:#7dff7d; }
+.role-manager td{ color:#ff6bff; }
+.role-system td{ color:#ffb347; }
+.mention-highlight{ background: rgba(255,255,120,0.18)!important; }
+.toast{ position:fixed; bottom:20px; right:20px; background:#1a0505; color:#ffb3b3; border:1px solid #ff7e7e; padding:.5rem .7rem; z-index:30;}

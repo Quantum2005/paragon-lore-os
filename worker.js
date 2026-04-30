@@ -1,7 +1,7 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,x-ars40-user,x-ars40-role"
+  "Access-Control-Allow-Headers": "Content-Type,x-ars40-user,x-ars40-role,x-ars40-user-id"
 };
 
 const ERROR_CODES = {
@@ -674,6 +674,16 @@ const ensureChatTables = async (database) => {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `).run();
+  await database.prepare(`
+    CREATE TABLE IF NOT EXISTS relay_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      persistent_user_id TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL,
+      role TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `).run();
   await database.prepare("ALTER TABLE relay_messages ADD COLUMN recipient TEXT").run().catch(() => {});
 };
 
@@ -736,6 +746,7 @@ const routeChat = async (request, env, pathname) => {
 
     const sender = getActor(request);
     const senderRole = getRole(request);
+    const persistentUserId = String(request.headers.get("x-ars40-user-id") || "").trim().toLowerCase().slice(0, 64);
     const content = String(body.content || "").trim();
     const requestedChannel = String(body.channel || "lobby").trim();
     const dmPeer = requestedChannel.startsWith("@")
@@ -743,7 +754,8 @@ const routeChat = async (request, env, pathname) => {
       : "";
     const channel = dmPeer ? "dm" : requestedChannel.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
     const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
-    const mentionUsers = Array.from(new Set((content.match(/@([A-Z0-9_-]{3,20})/gi) || [])
+    const blockedTerms = ["slur1", "slur2", "adminhack"];
+    const mentionUsers = Array.from(new Set((content.match(/@([A-Z0-9_-]{3,20}|everyone|local)/gi) || [])
       .map((part) => part.slice(1).toUpperCase())));
 
     if (!channel) {
@@ -752,6 +764,18 @@ const routeChat = async (request, env, pathname) => {
 
     if (!content) {
       return json({ ok: false, code: ERROR_CODES.CHAT_EMPTY_MESSAGE, message: "Message content is required." }, 400);
+    }
+
+    let filteredContent = content;
+    for (const term of blockedTerms) {
+      filteredContent = filteredContent.replace(new RegExp(`\\b${term}\\b`, "gi"), (m) => "*".repeat(m.length));
+    }
+    if (persistentUserId) {
+      await chatDb.prepare(`
+        INSERT INTO relay_users (persistent_user_id, username, role, updated_at)
+        VALUES (?1, ?2, ?3, datetime('now'))
+        ON CONFLICT(persistent_user_id) DO UPDATE SET username = excluded.username, role = excluded.role, updated_at = datetime('now')
+      `).bind(persistentUserId, sender, senderRole).run();
     }
 
     const flags = await chatDb.prepare(`
@@ -776,9 +800,18 @@ const routeChat = async (request, env, pathname) => {
     await chatDb.prepare(`
       INSERT INTO relay_messages (message_uid, sender, sender_role_snapshot, channel, recipient, content, metadata_json)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-    `).bind(messageUid, sender, senderRole, channel, dmPeer || null, content, metadata ? JSON.stringify(metadata) : null).run();
+    `).bind(messageUid, sender, senderRole, channel, dmPeer || null, filteredContent, metadata ? JSON.stringify(metadata) : null).run();
 
-    const inboxTargets = new Set([...mentionUsers, ...(dmPeer ? [dmPeer] : [])]);
+    const inboxTargets = new Set([...(dmPeer ? [dmPeer] : [])]);
+    if (mentionUsers.includes("EVERYONE")) {
+      const allUsers = await chatDb.prepare("SELECT DISTINCT username FROM relay_users").all();
+      for (const r of (allUsers.results||[])) inboxTargets.add(String(r.username||"").toUpperCase());
+    }
+    if (mentionUsers.includes("LOCAL") && channel !== "dm") {
+      const localUsers = await chatDb.prepare("SELECT DISTINCT sender FROM relay_messages WHERE channel = ?1").bind(channel).all();
+      for (const r of (localUsers.results||[])) inboxTargets.add(String(r.sender||"").toUpperCase());
+    }
+    for (const u of mentionUsers.filter((u)=>u!=="EVERYONE"&&u!=="LOCAL")) inboxTargets.add(u);
     inboxTargets.delete(sender);
     for (const target of inboxTargets) {
       await chatDb.prepare(`
