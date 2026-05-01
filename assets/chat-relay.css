@@ -106,10 +106,8 @@ html, body {
 }
 
 .chat-table td:nth-child(3) { white-space: pre-wrap; word-break: break-word; }
-.meta-col,
-.meta-cell {
-  display: none;
-}
+.meta-col { width: 140px; }
+.meta-cell { width: 140px; color: var(--fg-dim); }
 
 .message-row:hover {
   background: rgba(137, 255, 159, 0.08);
@@ -179,3 +177,12 @@ html, body {
   from { transform: translate(0, 0); }
   to { transform: translate(-3px, 2px); }
 }
+
+.role-administrator td{ color:#7dff7d; }
+.role-manager td{ color:#ff6bff; }
+.role-system td{ color:#ffb347; }
+.mention-highlight{ background: rgba(255,255,120,0.18)!important; }
+.toast{ position:fixed; bottom:20px; right:20px; background:#1a0505; color:#ffb3b3; border:1px solid #ff7e7e; padding:.5rem .7rem; z-index:30;}
+
+.system-message td{ color:#d5d5d5; font-style:italic; }
+.system-message.warning td{ color:#ffb347; }

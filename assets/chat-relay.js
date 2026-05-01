@@ -1,5 +1,5 @@
 const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
-const CHAT_RETURN_URL = "./ars40-console.html";
+const CHAT_RETURN_URL = "./ars40-console.html?skipBoot=1";
 
 const chatBody = document.getElementById("chatBody");
 const whoami = document.getElementById("whoami");
@@ -9,6 +9,7 @@ const messageInput = document.getElementById("messageInput");
 const statusEl = document.getElementById("status");
 const inboxStatusEl = document.getElementById("inboxStatus");
 const modMenu = document.getElementById("modMenu");
+const toastEl = document.getElementById("toast");
 const modMessageId = document.getElementById("modMessageId");
 const modUserId = document.getElementById("modUserId");
 
@@ -16,13 +17,20 @@ let activeBackendBase = "";
 let selectedMessage = null;
 let activeChannel = "lobby";
 let activeNickname = (sessionStorage.getItem("ars40:chatNick") || sessionStorage.getItem("ars40:user") || "GUEST").trim().toUpperCase().slice(0, 20);
+const persistentUserId = (() => {
+  const saved = localStorage.getItem("ars40:chatUserId");
+  if (saved && /^[a-f0-9-]{8,40}$/i.test(saved)) return saved;
+  const next = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`).toLowerCase();
+  localStorage.setItem("ars40:chatUserId", next);
+  return next;
+})();
 
 const role = (sessionStorage.getItem("ars40:role") || "standard").toLowerCase();
 const isModerator = role === "administrator" || role === "manager";
 
 const refreshIdentity = () => {
   const channelTag = activeChannel.startsWith("@") ? `DM ${activeChannel}` : `#${activeChannel.toUpperCase()}`;
-  whoami.textContent = `USER ${activeNickname} | ROLE ${role.toUpperCase()}${isModerator ? " | MODERATION ENABLED" : ""}`;
+  whoami.textContent = `USER ${activeNickname} [${persistentUserId.slice(0,8)}] | ROLE ${role.toUpperCase()}${isModerator ? " | MODERATION ENABLED" : ""}`;
   channelLabel.textContent = `INTERCHAT RELAY NETWORK // CHANNEL ${channelTag}`;
 };
 
@@ -53,10 +61,27 @@ const fetchWithBackendFallback = async (path, options = {}) => {
   throw new Error(`No reachable backend for ${path}`);
 };
 
-const setStatus = (message, error = false) => {
+let statusLockUntil = 0;
+const setStatus = (message, error = false, holdMs = 0) => {
+  if (Date.now() < statusLockUntil && !error) return;
+  if (error && holdMs > 0) statusLockUntil = Date.now() + holdMs;
   statusEl.textContent = message;
   statusEl.style.color = error ? "var(--error)" : "var(--fg)";
 };
+
+const showToast = (message) => { if (!toastEl) return; toastEl.textContent = message; toastEl.hidden = false; clearTimeout(showToast._t); showToast._t=setTimeout(()=>{toastEl.hidden=true;}, 2600); };
+const pushSystemMessage = (message, level = "info") => {
+  const row = document.createElement("tr");
+  row.className = `message-row system-message ${level}`;
+  const td = document.createElement("td");
+  td.colSpan = 3;
+  td.textContent = `[SYSTEM] ${message}`;
+  row.appendChild(td);
+  chatBody.appendChild(row);
+  chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
+};
+
+const closeModMenu = () => { modMenu.hidden = true; selectedMessage = null; };
 
 const setInboxStatus = (message) => {
   inboxStatusEl.textContent = message;
@@ -66,6 +91,7 @@ const callChatApi = async (path, options = {}) => {
   const headers = {
     "x-ars40-user": activeNickname,
     "x-ars40-role": role,
+    "x-ars40-user-id": persistentUserId,
     ...(options.headers || {})
   };
 
@@ -108,6 +134,10 @@ const normalizeChannel = (value) => {
   return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "lobby";
 };
 
+const escapeHtml = (v) => String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const linkify = (text) => escapeHtml(text).replace(/(https?:\/\/[^\s<]+)/gi, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+const roleClass = (roleName) => ({administrator:"role-administrator",manager:"role-manager",system:"role-system"}[String(roleName||"").toLowerCase()]||"");
+const mentionRegex = /@([A-Z0-9_-]{3,20}|everyone|local)/gi;
 const buildVisibleLine = (message) => {
   const sender = String(message.sender || "UNKNOWN");
   const created = fmtTime(message.created_at);
@@ -136,7 +166,12 @@ const renderMessages = (messages) => {
     hiddenTimeCell.textContent = fmtTime(message.created_at);
 
     const visibleCell = document.createElement("td");
-    visibleCell.textContent = buildVisibleLine(message);
+    const mine = activeNickname.toUpperCase();
+    const mentions = String(message.content||"").match(mentionRegex) || [];
+    if (mentions.some((m) => { const t=m.slice(1).toUpperCase(); return t===mine || t==="EVERYONE" || (t==="LOCAL" && String(message.channel||"").toLowerCase()===String(activeChannel).replace("@", "dm")); })) { row.classList.add("mention-highlight"); }
+    const senderRoleClass = roleClass(message.sender_role_snapshot);
+    if (senderRoleClass) row.classList.add(senderRoleClass);
+    visibleCell.innerHTML = buildVisibleLine(message).replace(escapeHtml(String(message.content||"")), linkify(String(message.content||"")));
 
     row.append(hiddenSenderCell, hiddenTimeCell, visibleCell);
 
@@ -164,6 +199,7 @@ const loadMessages = async () => {
     renderMessages(payload.messages || []);
     refreshIdentity();
     setStatus(`ONLINE // ${activeNickname} // ${activeChannel.startsWith("@") ? activeChannel : `#${activeChannel.toUpperCase()}`}`, false);
+    chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
   } catch (error) {
     setStatus(`LOAD FAILED: ${error.message}`, true);
   }
@@ -246,6 +282,19 @@ const runCommand = async (rawInput) => {
     return true;
   }
 
+
+  if (command === "announce" || command === "ping") {
+    const text = args.join(" ").trim();
+    if (!text) { setStatus(`USAGE: /${command} <message>`, true); return true; }
+    await sendMessage(`@everyone [${command.toUpperCase()}] ${text}`, "lobby");
+    return true;
+  }
+
+  if (command === "help") {
+    setStatus("COMMANDS: /help /exit /reload /nick /join /msg /announce /ping /inbox", false);
+    return true;
+  }
+
   if (command === "inbox") {
     const payload = await callChatApi("/chat/inbox?unread=1", { method: "GET" });
     const entries = payload.inbox || [];
@@ -265,12 +314,26 @@ const runCommand = async (rawInput) => {
   return true;
 };
 
+let blockedTerms = [];
+const loadBlockedTerms = async () => {
+  try {
+    const res = await fetch("./assets/en.txt", { cache: "no-store" });
+    if (!res.ok) return;
+    const text = await res.text();
+    blockedTerms = text.split(/\r?\n/).map((v) => v.trim().toLowerCase()).filter(Boolean);
+  } catch {}
+};
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const maskBlocked = (txt) => { let blocked=[]; let out=txt; for (const w of blockedTerms){ const re=new RegExp(`\\b${escapeRegExp(w)}\\b`,"gi"); if (re.test(out)){ blocked.push(w); out=out.replace(re, (m)=>"*".repeat(m.length)); } } return {out,blocked}; };
+
 const sendMessage = async (content, overrideChannel = null) => {
   try {
     const channel = overrideChannel || activeChannel;
+    const filtered = maskBlocked(content);
+    if (filtered.blocked.length) { pushSystemMessage("This content is not permitted", "warning"); setStatus("This content is not permitted", true, 10000); }
     await callChatApi("/chat/messages", {
       method: "POST",
-      body: JSON.stringify({ content, channel })
+      body: JSON.stringify({ content: filtered.out, channel })
     });
     setStatus(`MESSAGE SENT ${channel.startsWith("@") ? channel : `#${channel.toUpperCase()}`}`, false);
     await loadMessages();
@@ -300,13 +363,13 @@ modMenu.addEventListener("click", async (event) => {
 
   const action = button.dataset.action;
   if (action === "close") {
-    modMenu.hidden = true;
+    closeModMenu();
     return;
   }
 
   if (!selectedMessage || !isModerator) {
     setStatus("MODERATION ERROR: NO SELECTED MESSAGE", true);
-    modMenu.hidden = true;
+    closeModMenu();
     return;
   }
 
@@ -326,24 +389,24 @@ modMenu.addEventListener("click", async (event) => {
     }
 
     setStatus(`ACTION COMPLETE: ${action.toUpperCase()}`, false);
-    modMenu.hidden = true;
+    closeModMenu();
     await loadMessages();
     await loadInbox();
   } catch (error) {
     setStatus(`ACTION FAILED: ${error.message}`, true);
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 
 window.addEventListener("click", (event) => {
   if (!modMenu.hidden && !modMenu.contains(event.target)) {
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 
@@ -352,5 +415,8 @@ setInterval(() => {
   void loadInbox();
 }, 7000);
 
+void loadBlockedTerms();
 void loadMessages();
 void loadInbox();
+
+if (!isModerator) { modMenu.hidden = true; }
