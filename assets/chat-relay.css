@@ -106,10 +106,8 @@ html, body {
 }
 
 .chat-table td:nth-child(3) { white-space: pre-wrap; word-break: break-word; }
-.meta-col,
-.meta-cell {
-  display: none;
-}
+.meta-col { width: 140px; }
+.meta-cell { width: 140px; color: var(--fg-dim); }
 
 .message-row:hover {
   background: rgba(137, 255, 159, 0.08);

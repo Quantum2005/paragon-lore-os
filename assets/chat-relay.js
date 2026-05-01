@@ -1,5 +1,5 @@
 const REMOTE_BACKEND_URL = "https://api-worker.logicalsystems-yt.workers.dev";
-const CHAT_RETURN_URL = "./ars40-console.html";
+const CHAT_RETURN_URL = "./ars40-console.html?skipBoot=1";
 
 const chatBody = document.getElementById("chatBody");
 const whoami = document.getElementById("whoami");
@@ -61,7 +61,10 @@ const fetchWithBackendFallback = async (path, options = {}) => {
   throw new Error(`No reachable backend for ${path}`);
 };
 
-const setStatus = (message, error = false) => {
+let statusLockUntil = 0;
+const setStatus = (message, error = false, holdMs = 0) => {
+  if (Date.now() < statusLockUntil && !error) return;
+  if (error && holdMs > 0) statusLockUntil = Date.now() + holdMs;
   statusEl.textContent = message;
   statusEl.style.color = error ? "var(--error)" : "var(--fg)";
 };
@@ -77,6 +80,8 @@ const pushSystemMessage = (message, level = "info") => {
   chatBody.appendChild(row);
   chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
 };
+
+const closeModMenu = () => { modMenu.hidden = true; selectedMessage = null; };
 
 const setInboxStatus = (message) => {
   inboxStatusEl.textContent = message;
@@ -194,6 +199,7 @@ const loadMessages = async () => {
     renderMessages(payload.messages || []);
     refreshIdentity();
     setStatus(`ONLINE // ${activeNickname} // ${activeChannel.startsWith("@") ? activeChannel : `#${activeChannel.toUpperCase()}`}`, false);
+    chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
   } catch (error) {
     setStatus(`LOAD FAILED: ${error.message}`, true);
   }
@@ -324,7 +330,7 @@ const sendMessage = async (content, overrideChannel = null) => {
   try {
     const channel = overrideChannel || activeChannel;
     const filtered = maskBlocked(content);
-    if (filtered.blocked.length) { pushSystemMessage("This content is not permitted", "warning"); }
+    if (filtered.blocked.length) { pushSystemMessage("This content is not permitted", "warning"); setStatus("This content is not permitted", true, 10000); }
     await callChatApi("/chat/messages", {
       method: "POST",
       body: JSON.stringify({ content: filtered.out, channel })
@@ -357,13 +363,13 @@ modMenu.addEventListener("click", async (event) => {
 
   const action = button.dataset.action;
   if (action === "close") {
-    modMenu.hidden = true;
+    closeModMenu();
     return;
   }
 
   if (!selectedMessage || !isModerator) {
     setStatus("MODERATION ERROR: NO SELECTED MESSAGE", true);
-    modMenu.hidden = true;
+    closeModMenu();
     return;
   }
 
@@ -383,24 +389,24 @@ modMenu.addEventListener("click", async (event) => {
     }
 
     setStatus(`ACTION COMPLETE: ${action.toUpperCase()}`, false);
-    modMenu.hidden = true;
+    closeModMenu();
     await loadMessages();
     await loadInbox();
   } catch (error) {
     setStatus(`ACTION FAILED: ${error.message}`, true);
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 
 window.addEventListener("click", (event) => {
   if (!modMenu.hidden && !modMenu.contains(event.target)) {
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    modMenu.hidden = true;
+    closeModMenu();
   }
 });
 

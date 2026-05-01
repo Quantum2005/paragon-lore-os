@@ -73,6 +73,8 @@ const normalizeFilename = (value) => String(value || "").trim();
 
 const validateFilename = (value) => /^[a-zA-Z0-9._-]{1,80}$/.test(value);
 
+const ensureDemoFiles = async () => {};
+
 const parseBody = async (request) => {
   try {
     return await request.json();
