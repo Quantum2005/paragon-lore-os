@@ -106,10 +106,9 @@ html, body {
 }
 
 .chat-table td:nth-child(3) { white-space: pre-wrap; word-break: break-word; }
-.meta-col,
-.meta-cell {
-  display: none;
-}
+.chat-table th:first-child, .chat-table td:first-child { width: 150px; }
+.chat-table th:nth-child(2), .chat-table td:nth-child(2) { width: 130px; }
+.meta-cell { color: var(--fg-dim); }
 
 .message-row:hover {
   background: rgba(137, 255, 159, 0.08);
@@ -148,6 +147,7 @@ html, body {
 }
 
 .mod-menu {
+  max-width: min(360px, calc(100vw - 2rem));
   position: fixed;
   min-width: 260px;
   border: 1px solid rgba(137, 255, 159, 0.45);
@@ -179,3 +179,20 @@ html, body {
   from { transform: translate(0, 0); }
   to { transform: translate(-3px, 2px); }
 }
+
+.role-administrator td{ color:#7dff7d; }
+.role-manager td{ color:#ff6bff; }
+.role-system td{ color:#ffb347; }
+.mention-highlight{ background: rgba(255,255,120,0.18)!important; }
+.toast{ position:fixed; bottom:20px; right:20px; background:#1a0505; color:#ffb3b3; border:1px solid #ff7e7e; padding:.5rem .7rem; z-index:30;}
+
+.system-message td{ color:#d5d5d5; font-style:italic; }
+.system-message.warning td{ color:#ffb347; }
+
+.moderation-selected { outline: 2px solid #ffb347; outline-offset: -2px; background: rgba(255, 179, 71, 0.16) !important; }
+.mod-hint { color: var(--fg-dim); font-size: 0.8rem; }
+.mod-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; margin: 0; }
+.mod-stats div { border: 1px solid rgba(137, 255, 159, 0.25); padding: 0.25rem; }
+.mod-stats dt { color: var(--fg-dim); font-size: 0.7rem; }
+.mod-stats dd { margin: 0.15rem 0 0; font-weight: bold; }
+.mod-selection { border-top: 1px solid rgba(137, 255, 159, 0.25); padding-top: 0.4rem; font-weight: bold; font-size: 0.85rem; }
