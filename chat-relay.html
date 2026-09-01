@@ -11,11 +11,13 @@
     <div class="noise" aria-hidden="true"></div>
     <main class="screen">
       <header class="topbar">
-        <div>INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
+        <div id="channelLabel">INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
+        <div id="currentTime" aria-live="off"></div>
         <div id="whoami"></div>
+        <button id="modToggle" class="mod-toggle" type="button" hidden>MOD</button>
       </header>
 
-      <section class="table-wrap">
+      <section id="tableWrap" class="table-wrap">
         <table class="chat-table" id="chatTable">
           <thead>
             <tr>
@@ -28,22 +30,30 @@
         </table>
       </section>
 
-      <form id="composer" class="composer">
+      <form id="composer" class="composer" aria-label="Relay command input">
+        <span id="composerPath" class="composer-path">ARS40://USER</span>
         <span class="prompt">&gt;</span>
-        <input id="messageInput" type="text" maxlength="600" autocomplete="off" spellcheck="false" placeholder="Type message and press Enter. Commands: /exit /reload /nick <name>" />
+        <input id="messageInput" class="composer-input" type="text" maxlength="600" autocomplete="off" spellcheck="false" value="/send " aria-label="Chat command input" />
       </form>
 
       <div id="status" class="status" aria-live="polite"></div>
+      <div id="toast" class="toast" hidden></div>
     </main>
 
     <div id="modMenu" class="mod-menu" hidden>
       <div class="mod-title">MODERATION PANEL</div>
-      <div class="mod-item">Message ID: <span id="modMessageId">-</span></div>
-      <div class="mod-item">User ID: <span id="modUserId">-</span></div>
-      <button data-action="delete">Delete Message</button>
-      <button data-action="mute">Mute User</button>
-      <button data-action="ban">Ban User</button>
-      <button data-action="close">Close</button>
+      <dl class="mod-stats">
+        <div><dt>CHANNEL</dt><dd id="modChannel">-</dd></div>
+        <div><dt>MESSAGES</dt><dd id="modMessageCount">0</dd></div>
+        <div><dt>MEMBERS</dt><dd id="modMemberCount">0</dd></div>
+      </dl>
+      <div class="mod-selection">SELECTED MESSAGE</div>
+      <div class="mod-item">Message ID: <span id="modMessageId">Select a message</span></div>
+      <div class="mod-item">User: <span id="modUserId">-</span></div>
+      <button data-action="delete" disabled>Delete Message</button>
+      <button data-action="kick" disabled>Kick User</button>
+      <button data-action="ban" disabled>Ban User</button>
+      <button data-action="close">Close Panel</button>
     </div>
   </div>
 
