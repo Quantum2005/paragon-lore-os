@@ -4,6 +4,8 @@ const CHAT_RETURN_URL = "./ars40-console.html?skipBoot=1";
 const chatBody = document.getElementById("chatBody");
 const whoami = document.getElementById("whoami");
 const channelLabel = document.getElementById("channelLabel");
+const currentTimeEl = document.getElementById("currentTime");
+const tableWrap = document.getElementById("tableWrap");
 const form = document.getElementById("composer");
 const messageInput = document.getElementById("messageInput");
 const statusEl = document.getElementById("status");
@@ -12,9 +14,16 @@ const modMenu = document.getElementById("modMenu");
 const toastEl = document.getElementById("toast");
 const modMessageId = document.getElementById("modMessageId");
 const modUserId = document.getElementById("modUserId");
+const modChannel = document.getElementById("modChannel");
+const modMessageCount = document.getElementById("modMessageCount");
+const modMemberCount = document.getElementById("modMemberCount");
+const modActionButtons = Array.from(modMenu.querySelectorAll("button[data-action]"));
 
 let activeBackendBase = "";
 let selectedMessage = null;
+let renderedMessages = [];
+let moderationChordTimer = null;
+const heldKeys = new Set();
 let activeChannel = "lobby";
 let activeNickname = (sessionStorage.getItem("ars40:chatNick") || sessionStorage.getItem("ars40:user") || "GUEST").trim().toUpperCase().slice(0, 20);
 const persistentUserId = (() => {
@@ -34,7 +43,12 @@ const refreshIdentity = () => {
   channelLabel.textContent = `INTERCHAT RELAY NETWORK // CHANNEL ${channelTag}`;
 };
 
+const updateCurrentTime = () => {
+  currentTimeEl.textContent = `SYSTEM TIME ${new Date().toISOString().slice(11, 19)} UTC`;
+};
+
 refreshIdentity();
+updateCurrentTime();
 
 const backendCandidates = () => {
   const list = [activeBackendBase, "", REMOTE_BACKEND_URL]
@@ -78,10 +92,39 @@ const pushSystemMessage = (message, level = "info") => {
   td.textContent = `[SYSTEM] ${message}`;
   row.appendChild(td);
   chatBody.appendChild(row);
-  chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
+  scrollChatToLatest();
 };
 
-const closeModMenu = () => { modMenu.hidden = true; selectedMessage = null; };
+const updateModerationPanel = () => {
+  const members = new Set(renderedMessages.map((message) => String(message.sender || "UNKNOWN")));
+  modChannel.textContent = activeChannel.startsWith("@") ? `DM ${activeChannel}` : `#${activeChannel.toUpperCase()}`;
+  modMessageCount.textContent = String(renderedMessages.length);
+  modMemberCount.textContent = String(members.size);
+  modMessageId.textContent = selectedMessage?.message_uid || "Select a message";
+  modUserId.textContent = selectedMessage?.sender || "-";
+  modActionButtons.forEach((button) => {
+    if (button.dataset.action !== "close") button.disabled = !selectedMessage;
+  });
+};
+
+const closeModMenu = () => {
+  modMenu.hidden = true;
+  selectedMessage = null;
+  document.querySelectorAll(".moderation-selected").forEach((row) => row.classList.remove("moderation-selected"));
+  updateModerationPanel();
+};
+
+const openModMenu = () => {
+  if (!isModerator) return;
+  modMenu.hidden = false;
+  updateModerationPanel();
+};
+
+const scrollChatToLatest = () => {
+  requestAnimationFrame(() => {
+    tableWrap.scrollTo({ top: tableWrap.scrollHeight, behavior: "auto" });
+  });
+};
 
 const setInboxStatus = (message) => {
   inboxStatusEl.textContent = message;
@@ -140,15 +183,12 @@ const roleClass = (roleName) => ({administrator:"role-administrator",manager:"ro
 const mentionRegex = /@([A-Z0-9_-]{3,20}|everyone|local)/gi;
 const buildVisibleLine = (message) => {
   const sender = String(message.sender || "UNKNOWN");
-  const created = fmtTime(message.created_at);
   const content = String(message.content || "");
-  const channelTag = String(message.channel || "").toLowerCase() === "dm"
-    ? `DM:${message.recipient ? `@${String(message.recipient).toUpperCase()}` : "DIRECT"}`
-    : `#${String(message.channel || "lobby").toUpperCase()}`;
-  return `<${sender}> [${created}] ${channelTag} ${content}`;
+  return `<${sender}> ${content}`;
 };
 
 const renderMessages = (messages) => {
+  renderedMessages = messages;
   chatBody.innerHTML = "";
 
   for (const message of messages) {
@@ -176,21 +216,19 @@ const renderMessages = (messages) => {
     row.append(hiddenSenderCell, hiddenTimeCell, visibleCell);
 
     if (isModerator) {
-      row.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
+      row.addEventListener("click", () => {
+        if (modMenu.hidden) return;
+        document.querySelectorAll(".moderation-selected").forEach((entry) => entry.classList.remove("moderation-selected"));
         selectedMessage = message;
-        modMessageId.textContent = message.message_uid;
-        modUserId.textContent = message.sender;
-        modMenu.style.left = `${event.clientX}px`;
-        modMenu.style.top = `${event.clientY}px`;
-        modMenu.hidden = false;
+        row.classList.add("moderation-selected");
+        updateModerationPanel();
       });
     }
 
     chatBody.appendChild(row);
   }
 
-  chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
+  scrollChatToLatest();
 };
 
 const loadMessages = async () => {
@@ -199,7 +237,7 @@ const loadMessages = async () => {
     renderMessages(payload.messages || []);
     refreshIdentity();
     setStatus(`ONLINE // ${activeNickname} // ${activeChannel.startsWith("@") ? activeChannel : `#${activeChannel.toUpperCase()}`}`, false);
-    chatBody.parentElement.scrollTop = chatBody.parentElement.scrollHeight;
+    scrollChatToLatest();
   } catch (error) {
     setStatus(`LOAD FAILED: ${error.message}`, true);
   }
@@ -234,10 +272,7 @@ const runCommand = async (rawInput) => {
   const command = String(cmd || "").toLowerCase();
 
   if (command === "exit") {
-    setStatus("EXITING RELAY...", false);
-    setTimeout(() => {
-      window.location.href = CHAT_RETURN_URL;
-    }, 120);
+    window.location.assign(CHAT_RETURN_URL);
     return true;
   }
 
@@ -270,6 +305,16 @@ const runCommand = async (rawInput) => {
     return true;
   }
 
+  if (command === "send") {
+    const messageText = args.join(" ").trim();
+    if (!messageText) {
+      setStatus("USAGE: /send <message>", true);
+      return true;
+    }
+    await sendMessage(messageText);
+    return true;
+  }
+
   if (command === "msg") {
     const target = normalizeChannel(`@${args[0] || ""}`);
     const messageText = args.slice(1).join(" ").trim();
@@ -291,7 +336,7 @@ const runCommand = async (rawInput) => {
   }
 
   if (command === "help") {
-    setStatus("COMMANDS: /help /exit /reload /nick /join /msg /announce /ping /inbox", false);
+    setStatus("COMMANDS: /send /help /exit /reload /nick /join /msg /announce /ping /inbox", false);
     return true;
   }
 
@@ -347,7 +392,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = messageInput.value.trim();
   if (!input) return;
-  messageInput.value = "";
+  messageInput.value = "/send ";
 
   if (input.startsWith("/")) {
     await runCommand(input);
@@ -381,7 +426,7 @@ modMenu.addEventListener("click", async (event) => {
         method: "POST",
         body: JSON.stringify({ action: "delete", messageUid: selectedMessage.message_uid, reason })
       });
-    } else if (action === "mute" || action === "ban") {
+    } else if (action === "kick" || action === "ban") {
       await callChatApi("/chat/moderation", {
         method: "POST",
         body: JSON.stringify({ action, targetUsername: selectedMessage.sender, reason })
@@ -398,22 +443,47 @@ modMenu.addEventListener("click", async (event) => {
   }
 });
 
-window.addEventListener("click", (event) => {
-  if (!modMenu.hidden && !modMenu.contains(event.target)) {
-    closeModMenu();
-  }
-});
+const clearModerationChord = () => {
+  clearTimeout(moderationChordTimer);
+  moderationChordTimer = null;
+};
+
+const startModerationChord = () => {
+  if (!isModerator || moderationChordTimer || !heldKeys.has("m") || !heldKeys.has("p")) return;
+  moderationChordTimer = setTimeout(() => {
+    moderationChordTimer = null;
+    if (heldKeys.has("m") && heldKeys.has("p")) {
+      if (modMenu.hidden) openModMenu(); else closeModMenu();
+    }
+  }, 3000);
+};
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    closeModMenu();
+  const key = event.key.toLowerCase();
+  if (key === "escape") closeModMenu();
+  if (key === "m" || key === "p") {
+    heldKeys.add(key);
+    startModerationChord();
   }
+});
+window.addEventListener("keyup", (event) => {
+  const key = event.key.toLowerCase();
+  if (key === "m" || key === "p") {
+    heldKeys.delete(key);
+    clearModerationChord();
+  }
+});
+window.addEventListener("blur", () => {
+  heldKeys.clear();
+  clearModerationChord();
 });
 
 setInterval(() => {
+  updateCurrentTime();
   void loadMessages();
   void loadInbox();
 }, 7000);
+setInterval(updateCurrentTime, 1000);
 
 void loadBlockedTerms();
 void loadMessages();

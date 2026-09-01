@@ -920,23 +920,25 @@ const routeChat = async (request, env, pathname) => {
       return json({ ok: true, action: "delete", message_uid: messageUid });
     }
 
-    if (action === "mute" || action === "ban") {
+    if (["mute", "kick", "ban"].includes(action)) {
       const targetUsername = String(body.targetUsername || "").trim().toUpperCase();
       if (!targetUsername) {
         return json({ ok: false, code: ERROR_CODES.BAD_JSON, message: "Target username is required." }, 400);
       }
 
-      if (action === "mute") {
+      if (action === "mute" || action === "kick") {
+        const isKick = action === "kick";
         await chatDb.prepare(`
-          INSERT INTO relay_user_flags (username, is_muted, muted_reason, muted_by, muted_at, updated_at)
-          VALUES (?1, 1, ?2, ?3, datetime('now'), datetime('now'))
+          INSERT INTO relay_user_flags (username, is_muted, muted_reason, muted_by, muted_at, mute_expires_at, updated_at)
+          VALUES (?1, 1, ?2, ?3, datetime('now'), ?4, datetime('now'))
           ON CONFLICT(username) DO UPDATE SET
             is_muted = 1,
             muted_reason = excluded.muted_reason,
             muted_by = excluded.muted_by,
             muted_at = datetime('now'),
+            mute_expires_at = excluded.mute_expires_at,
             updated_at = datetime('now')
-        `).bind(targetUsername, reason, actor).run();
+        `).bind(targetUsername, reason || (isKick ? "Kicked by moderator" : null), actor, isKick ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null).run();
       } else {
         await chatDb.prepare(`
           INSERT INTO relay_user_flags (username, is_banned, banned_reason, banned_by, banned_at, updated_at)
