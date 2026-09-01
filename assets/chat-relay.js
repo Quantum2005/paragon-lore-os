@@ -447,13 +447,6 @@ modMenu.addEventListener("click", async (event) => {
 modToggle.addEventListener("click", () => {
   if (modMenu.hidden) openModMenu(); else closeModMenu();
 });
-window.addEventListener("keyup", (event) => {
-  const key = event.key.toLowerCase();
-  if (key === "m" || key === "p") {
-    heldKeys.delete(key);
-    clearModerationChord();
-  }
-});
 window.addEventListener("blur", () => {
   heldKeys.clear();
   clearModerationChord();
