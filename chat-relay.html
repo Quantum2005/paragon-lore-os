@@ -14,6 +14,7 @@
         <div id="channelLabel">INTERCHAT RELAY NETWORK // CHANNEL #LOBBY</div>
         <div id="currentTime" aria-live="off"></div>
         <div id="whoami"></div>
+        <button id="modToggle" class="mod-toggle" type="button" hidden>MOD</button>
       </header>
 
       <section id="tableWrap" class="table-wrap">
@@ -29,9 +30,10 @@
         </table>
       </section>
 
-      <form id="composer" class="composer">
+      <form id="composer" class="composer" aria-label="Relay command input">
+        <span id="composerPath" class="composer-path">ARS40://USER</span>
         <span class="prompt">&gt;</span>
-        <input id="messageInput" type="text" maxlength="600" autocomplete="off" spellcheck="false" value="/send " aria-label="Chat command input" />
+        <input id="messageInput" class="composer-input" type="text" maxlength="600" autocomplete="off" spellcheck="false" value="/send " aria-label="Chat command input" />
       </form>
 
       <div id="status" class="status" aria-live="polite"></div>
@@ -40,7 +42,6 @@
 
     <div id="modMenu" class="mod-menu" hidden>
       <div class="mod-title">MODERATION PANEL</div>
-      <div class="mod-hint">Hold M + P for 3 seconds to toggle.</div>
       <dl class="mod-stats">
         <div><dt>CHANNEL</dt><dd id="modChannel">-</dd></div>
         <div><dt>MESSAGES</dt><dd id="modMessageCount">0</dd></div>

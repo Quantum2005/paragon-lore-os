@@ -115,24 +115,54 @@ html, body {
 }
 
 .composer {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.4rem;
+  display: flex;
   align-items: center;
+  gap: 0.55rem;
+  min-height: 2.2rem;
+  padding: 0.35rem 0.55rem;
+  border-left: 2px solid var(--fg-dim);
+  background: rgba(0, 9, 4, 0.45);
+  font-size: clamp(13px, 1.75vw, 18px);
 }
 
-.prompt {
+.composer-path {
   color: var(--fg-dim);
+  min-width: 14ch;
+  letter-spacing: 0.02em;
   font-weight: bold;
 }
 
-.composer input {
+.prompt {
+  color: var(--fg);
+  font-weight: bold;
+}
+
+.composer-input {
+  flex: 1;
+  min-width: 8ch;
+  padding: 0;
+  border: 0;
+  outline: none;
   background: transparent;
   color: var(--fg);
-  border: 1px solid rgba(137, 255, 159, 0.45);
+  caret-color: var(--fg);
   font-family: inherit;
   font-size: inherit;
-  padding: 0.35rem 0.45rem;
+}
+
+.mod-toggle {
+  border: 1px solid rgba(137, 255, 159, 0.45);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+
+.mod-toggle:hover,
+.mod-toggle:focus-visible {
+  background: rgba(137, 255, 159, 0.12);
 }
 
 .status {
@@ -190,7 +220,6 @@ html, body {
 .system-message.warning td{ color:#ffb347; }
 
 .moderation-selected { outline: 2px solid #ffb347; outline-offset: -2px; background: rgba(255, 179, 71, 0.16) !important; }
-.mod-hint { color: var(--fg-dim); font-size: 0.8rem; }
 .mod-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; margin: 0; }
 .mod-stats div { border: 1px solid rgba(137, 255, 159, 0.25); padding: 0.25rem; }
 .mod-stats dt { color: var(--fg-dim); font-size: 0.7rem; }

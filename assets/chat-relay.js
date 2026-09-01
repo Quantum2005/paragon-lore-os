@@ -6,6 +6,8 @@ const whoami = document.getElementById("whoami");
 const channelLabel = document.getElementById("channelLabel");
 const currentTimeEl = document.getElementById("currentTime");
 const tableWrap = document.getElementById("tableWrap");
+const composerPath = document.getElementById("composerPath");
+const modToggle = document.getElementById("modToggle");
 const form = document.getElementById("composer");
 const messageInput = document.getElementById("messageInput");
 const statusEl = document.getElementById("status");
@@ -22,8 +24,6 @@ const modActionButtons = Array.from(modMenu.querySelectorAll("button[data-action
 let activeBackendBase = "";
 let selectedMessage = null;
 let renderedMessages = [];
-let moderationChordTimer = null;
-const heldKeys = new Set();
 let activeChannel = "lobby";
 let activeNickname = (sessionStorage.getItem("ars40:chatNick") || sessionStorage.getItem("ars40:user") || "GUEST").trim().toUpperCase().slice(0, 20);
 const persistentUserId = (() => {
@@ -40,6 +40,7 @@ const isModerator = role === "administrator" || role === "manager";
 const refreshIdentity = () => {
   const channelTag = activeChannel.startsWith("@") ? `DM ${activeChannel}` : `#${activeChannel.toUpperCase()}`;
   whoami.textContent = `USER ${activeNickname} [${persistentUserId.slice(0,8)}] | ROLE ${role.toUpperCase()}${isModerator ? " | MODERATION ENABLED" : ""}`;
+  composerPath.textContent = `ARS40://${activeNickname}`;
   channelLabel.textContent = `INTERCHAT RELAY NETWORK // CHANNEL ${channelTag}`;
 };
 
@@ -78,7 +79,7 @@ const fetchWithBackendFallback = async (path, options = {}) => {
 let statusLockUntil = 0;
 const setStatus = (message, error = false, holdMs = 0) => {
   if (Date.now() < statusLockUntil && !error) return;
-  if (error && holdMs > 0) statusLockUntil = Date.now() + holdMs;
+  if (holdMs > 0) statusLockUntil = Date.now() + holdMs;
   statusEl.textContent = message;
   statusEl.style.color = error ? "var(--error)" : "var(--fg)";
 };
@@ -336,7 +337,7 @@ const runCommand = async (rawInput) => {
   }
 
   if (command === "help") {
-    setStatus("COMMANDS: /send /help /exit /reload /nick /join /msg /announce /ping /inbox", false);
+    setStatus("COMMANDS: /send /help /exit /reload /nick /join /msg /announce /ping /inbox", false, 15000);
     return true;
   }
 
@@ -443,28 +444,8 @@ modMenu.addEventListener("click", async (event) => {
   }
 });
 
-const clearModerationChord = () => {
-  clearTimeout(moderationChordTimer);
-  moderationChordTimer = null;
-};
-
-const startModerationChord = () => {
-  if (!isModerator || moderationChordTimer || !heldKeys.has("m") || !heldKeys.has("p")) return;
-  moderationChordTimer = setTimeout(() => {
-    moderationChordTimer = null;
-    if (heldKeys.has("m") && heldKeys.has("p")) {
-      if (modMenu.hidden) openModMenu(); else closeModMenu();
-    }
-  }, 3000);
-};
-
-window.addEventListener("keydown", (event) => {
-  const key = event.key.toLowerCase();
-  if (key === "escape") closeModMenu();
-  if (key === "m" || key === "p") {
-    heldKeys.add(key);
-    startModerationChord();
-  }
+modToggle.addEventListener("click", () => {
+  if (modMenu.hidden) openModMenu(); else closeModMenu();
 });
 window.addEventListener("keyup", (event) => {
   const key = event.key.toLowerCase();
@@ -489,4 +470,8 @@ void loadBlockedTerms();
 void loadMessages();
 void loadInbox();
 
-if (!isModerator) { modMenu.hidden = true; }
+if (isModerator) {
+  modToggle.hidden = false;
+} else {
+  modMenu.hidden = true;
+}
