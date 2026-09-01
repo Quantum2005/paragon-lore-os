@@ -393,7 +393,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = messageInput.value.trim();
   if (!input) return;
-  messageInput.value = "";
+  messageInput.value = "/send ";
 
   if (input.startsWith("/")) {
     await runCommand(input);
@@ -446,6 +446,10 @@ modMenu.addEventListener("click", async (event) => {
 
 modToggle.addEventListener("click", () => {
   if (modMenu.hidden) openModMenu(); else closeModMenu();
+});
+window.addEventListener("blur", () => {
+  heldKeys.clear();
+  clearModerationChord();
 });
 
 setInterval(() => {
